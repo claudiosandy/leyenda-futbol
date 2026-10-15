@@ -54,5 +54,18 @@ for (const [nombre, fn] of Object.entries(PLANOS)) {
   if (ok) { await page.screenshot({ path: join(out, 'debug_color.png') }); info.debug_color = await page.evaluate(() => window.__debugColor); console.log('debug_color OK'); }
   await page.close();
 }
+// Autoprueba del pipeline GLB (humanoide sintético generado en memoria; solo desde la fase 4)
+for (const nombre of ['cuerpo_frontal', 'plano_general']) {
+  const page = await browser.newPage({ viewport: { width: 1280, height: 720 } });
+  await page.addInitScript(() => { const raf = window.requestAnimationFrame; window.__manual = false; window.requestAnimationFrame = cb => window.__manual ? 0 : raf(cb); });
+  await page.goto('file://' + join(root, 'index.html') + '?selftest=glb', { timeout: 60000 });
+  const ok = await page.waitForFunction(() => window.__glbListo && window.__escenaLista, null, { timeout: 60000 }).then(() => true, () => false);
+  if (!ok) { await page.close(); continue; }
+  await page.evaluate(`window.__manual = true; (${PLANOS[nombre].toString()})(); if (typeof animFigures === 'function') for (let i = 0; i < 20; i++) animFigures(1 / 60);`);
+  const datos = await page.evaluate(() => { renderer.info.autoReset = false; renderer.info.reset(); renderer.render(scene, camera); const i = renderer.info; return { drawCalls: i.render.calls, triangulos: i.render.triangles, glb: window.__glbListo }; });
+  await page.screenshot({ path: join(out, nombre + '_glb_sintetico.png') });
+  info[nombre + '_glb_sintetico'] = datos; console.log(nombre + '_glb_sintetico', JSON.stringify(datos));
+  await page.close();
+}
 writeFileSync(join(out, 'renderer-info.json'), JSON.stringify(info, null, 2));
 await browser.close();

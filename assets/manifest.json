@@ -44,5 +44,57 @@
       "disponible": false
     }
   },
-  "models": {}
+  "models": {
+    "player_base": {
+      "url": "assets/models/player/player_base.min.glb",
+      "licencia": "CC0 (ver ASSETS.md)",
+      "maxMB": 25,
+      "rig": "mixamo",
+      "escala": 1,
+      "rotY": 3.14159,
+      "clips": {
+        "idle": "Idle",
+        "run": "Run",
+        "sprint": "Sprint",
+        "kick": "Kick",
+        "celebrate": "Celebrate"
+      },
+      "materiales": {
+        "jersey": [
+          "shirt",
+          "jersey",
+          "camiseta",
+          "top"
+        ],
+        "shorts": [
+          "shorts",
+          "pants",
+          "pantalon"
+        ],
+        "sock": [
+          "socks",
+          "medias"
+        ],
+        "skin": [
+          "skin",
+          "body"
+        ],
+        "head": [
+          "head",
+          "face"
+        ],
+        "boot": [
+          "boots",
+          "shoes",
+          "botas"
+        ]
+      },
+      "conPelo": false,
+      "alturaCabeza": 0.1,
+      "contactoGolpeo": 0.45,
+      "ejeX": 1,
+      "nota": "Rig humanoide con clips idle/run/sprint/kick/celebrate. Los nombres de clips, huesos y materiales se ajustan aquí sin tocar código.",
+      "disponible": false
+    }
+  }
 }

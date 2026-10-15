@@ -782,7 +782,13 @@ if (location.protocol.startsWith('http')) {
         tex.colorSpace = e.colorSpace === 'srgb' ? THREE.SRGBColorSpace : THREE.NoColorSpace; tex.wrapS = tex.wrapT = THREE.RepeatWrapping; tex.anisotropy = MAXANISO;
         if (old) tex.repeat.copy(old.repeat); mat[slot] = tex; mat.needsUpdate = true; console.info(`[assets] ${id}: cargado ${e.url}`); done();
       }, undefined, () => { console.warn(`[assets] ${id}: no disponible (${e.url}); se usa la textura procedural`); done(); });
-    })));
+    })).concat(Object.entries(man.hdri || {}).filter(([, e]) => e.disponible && (PRESET_NAME === 'high' || PRESET_NAME === 'ultra')).map(([id, e]) => new Promise(done => {
+      // HDRI real solo en calidad alta; el entorno procedural (ENV) sigue siendo el respaldo permanente
+      new THREE.addons.HDRLoader().load(e.url, hdr => {
+        const pm = new THREE.PMREMGenerator(renderer); scene.environment = pm.fromEquirectangular(hdr).texture; pm.dispose(); hdr.dispose();
+        console.info(`[assets] ${id}: HDRI cargado ${e.url}`); done();
+      }, undefined, () => { console.warn(`[assets] ${id}: no disponible (${e.url}); se usa el entorno procedural`); done(); });
+    }))));
   }).catch(err => console.warn('[assets] manifest no disponible; se usan texturas procedurales', err));
 } else console.info('[assets] file:// — se usan texturas procedurales (los assets externos solo se cargan servidos por http/https)');
 const glowTex = (() => { const cv = document.createElement('canvas'); cv.width = cv.height = 128; const g = cv.getContext('2d'), gr = g.createRadialGradient(64, 64, 0, 64, 64, 64); gr.addColorStop(0, 'rgba(255,250,230,1)'); gr.addColorStop(0.25, 'rgba(255,245,210,.5)'); gr.addColorStop(1, 'rgba(255,240,200,0)'); g.fillStyle = gr; g.fillRect(0, 0, 128, 128); return srgbTex(new THREE.CanvasTexture(cv)); })();
@@ -870,24 +876,19 @@ function drawNumber(g, txt, x, y, size, k) {
   g.lineWidth = Math.max(4, size * 0.09); g.strokeStyle = lum(k.n) > 0.5 ? 'rgba(0,0,0,.55)' : 'rgba(255,255,255,.75)';
   g.strokeText(txt, x, y); g.fillStyle = css(k.n); g.fillText(txt, x, y);
 }
-// Textura de la camiseta que envuelve el torso: espalda centrada en x=¼ y pecho en x=¾
-function jerseyTex(k, name = '', num = '') {
-  return ctex(`J${kitKey(k)}|${name}#${num}`, 512, 256, (g, w, h) => {
-    paintPattern(g, w, h, k);
-    // pliegues y sombreado suave del tejido
-    const sh = g.createLinearGradient(0, 0, w, 0); [0, 0.25, 0.5, 0.75, 1].forEach((t, i) => sh.addColorStop(t, i % 2 ? 'rgba(255,255,255,.06)' : 'rgba(0,0,0,.14)')); g.fillStyle = sh; g.fillRect(0, 0, w, h);
-    const F = w * 0.75, B = w * 0.25;
-    g.fillStyle = css(k.t); g.beginPath(); g.moveTo(F - 34, 0); g.lineTo(F + 34, 0); g.lineTo(F, 34); g.fill(); // cuello en V
-    g.fillStyle = 'rgba(0,0,0,.28)'; g.beginPath(); g.moveTo(F - 20, 0); g.lineTo(F + 20, 0); g.lineTo(F, 20); g.fill();
-    g.fillStyle = css(k.t); g.fillRect(B - 40, 0, 80, 10);
-    // escudo y marca
-    const cx = F + 52, cy = 62; g.fillStyle = css(k.t); g.beginPath(); g.moveTo(cx - 13, cy - 15); g.lineTo(cx + 13, cy - 15); g.lineTo(cx + 13, cy + 3); g.quadraticCurveTo(cx, cy + 19, cx - 13, cy + 3); g.closePath(); g.fill();
-    g.fillStyle = css(k.a); g.beginPath(); g.arc(cx, cy - 2, 6, 0, 7); g.fill();
-    g.strokeStyle = css(k.t); g.lineWidth = 5; g.lineCap = 'round'; g.beginPath(); g.moveTo(F - 62, 58); g.lineTo(F - 56, 64); g.lineTo(F - 44, 52); g.stroke();
-    if (num !== '') drawNumber(g, String(num), F, 132, 58, k);
-    if (name) { let fs = 30; g.font = `900 ${fs}px "Arial Black", Impact, sans-serif`; while (g.measureText(name).width > 170 && fs > 12) { fs -= 2; g.font = `900 ${fs}px "Arial Black", Impact, sans-serif`; } drawNumber(g, name, B, 46, fs, k); }
-    if (num !== '') drawNumber(g, String(num), B, 140, 104, k);
-    g.fillStyle = css(k.t); g.fillRect(0, h - 10, w, 10); // ribete inferior
+// Calcomanías de la camiseta (sRGB con transparencia): mitad izquierda = pecho (escudo, marca y dorsal pequeño),
+// mitad derecha = espalda (nombre y dorsal). El shader las proyecta en el espacio del objeto (sirve para el muñeco y para un GLB).
+function decalTex(k, name = '', num = '') {
+  return ctex(`D${kitKey(k)}|${name}#${num}`, 512, 256, (g, w, h) => {
+    g.clearRect(0, 0, w, h);
+    const fx = nx => (1 - nx) * 0.5 * w, bx = nx => (0.5 + nx * 0.5) * w, Y = ny => (1 - ny) * h;
+    // escudo genérico (sin escudos reales) en el pecho izquierdo y marca genérica en el derecho
+    const cx = fx(0.33), cy = Y(0.78); g.fillStyle = css(k.t); g.beginPath(); g.moveTo(cx - 11, cy - 13); g.lineTo(cx + 11, cy - 13); g.lineTo(cx + 11, cy + 2); g.quadraticCurveTo(cx, cy + 16, cx - 11, cy + 2); g.closePath(); g.fill();
+    g.fillStyle = css(k.a); g.beginPath(); g.arc(cx, cy - 2, 5, 0, 7); g.fill();
+    g.strokeStyle = css(k.t); g.lineWidth = 4; g.lineCap = 'round'; const mx = fx(0.68), my = Y(0.78); g.beginPath(); g.moveTo(mx - 9, my - 2); g.lineTo(mx - 4, my + 4); g.lineTo(mx + 8, my - 7); g.stroke();
+    if (num !== '') drawNumber(g, String(num), fx(0.5), Y(0.55), 46, k);
+    if (name) { let fs = 28; g.font = `900 ${fs}px "Arial Black", Impact, sans-serif`; while (g.measureText(name).width > 190 && fs > 12) { fs -= 2; g.font = `900 ${fs}px "Arial Black", Impact, sans-serif`; } drawNumber(g, name, bx(0.5), Y(0.84), fs, k); }
+    if (num !== '') drawNumber(g, String(num), bx(0.5), Y(0.52), 96, k);
   });
 }
 function sockTex(k) {
@@ -916,17 +917,14 @@ function faceTex(skin, face, beard, hc) {
     g.strokeStyle = css(hc === 0xe8e8e8 ? 0x8a8a8a : hc); g.lineCap = 'round'; g.lineWidth = 6;
     const browTilt = face === 2 || face === 4 ? 5 : face === 1 || face === 5 ? -3 : 0;
     for (const sx of [-1, 1]) { g.beginPath(); g.moveTo(cx + sx * 10, ey - 18 + browTilt); g.lineTo(cx + sx * 34, ey - 22 - browTilt * 0.4); g.stroke(); }
-    // ojos
+    // cuencas: sombra suave y párpado; el globo ocular es una esfera 3D encajada en la cabeza
     for (const sx of [-1, 1]) {
-      const x = cx + sx * 22;
-      if (face === 3 && sx > 0) { g.strokeStyle = '#2a1a12'; g.lineWidth = 4; g.beginPath(); g.arc(x, ey + 2, 8, Math.PI * 1.1, Math.PI * 1.9); g.stroke(); continue; }
-      g.fillStyle = '#f4f1ea'; g.beginPath(); g.ellipse(x, ey, 10, face === 2 ? 5 : 6.5, 0, 0, 7); g.fill();
-      g.fillStyle = dark ? '#2a1708' : pick(['#4a2e1a', '#2f5d8a', '#3d6b3a', '#5a3a1e']); g.beginPath(); g.arc(x, ey, 5, 0, 7); g.fill();
-      g.fillStyle = '#0b0b0b'; g.beginPath(); g.arc(x, ey, 2.4, 0, 7); g.fill(); g.fillStyle = '#fff'; g.beginPath(); g.arc(x + 1.5, ey - 1.8, 1.2, 0, 7); g.fill();
-      g.strokeStyle = sk(-55); g.lineWidth = 2; g.beginPath(); g.ellipse(x, ey, 10, face === 2 ? 5 : 6.5, 0, Math.PI, 0); g.stroke();
+      const x = cx + sx * 22, gr = g.createRadialGradient(x, ey, 2, x, ey, 15); gr.addColorStop(0, sk(-60)); gr.addColorStop(1, 'rgba(0,0,0,0)');
+      g.fillStyle = gr; g.beginPath(); g.ellipse(x, ey, 15, 11, 0, 0, 7); g.fill();
+      g.strokeStyle = sk(-75); g.lineWidth = 2.2; g.beginPath(); g.ellipse(x, ey - 1, 11, face === 2 ? 5 : 7, 0, Math.PI * 1.08, Math.PI * 1.92); g.stroke();
     }
     // nariz (sombra) y boca
-    g.strokeStyle = sk(-40); g.lineWidth = 3; g.beginPath(); g.moveTo(cx + 3, ey + 8); g.lineTo(cx + 6, ey + 30); g.lineTo(cx - 2, ey + 33); g.stroke();
+    { const gr = g.createRadialGradient(cx + 4, ey + 26, 2, cx + 4, ey + 26, 14); gr.addColorStop(0, sk(-35)); gr.addColorStop(1, 'rgba(0,0,0,0)'); g.fillStyle = gr; g.fillRect(cx - 14, ey + 12, 32, 28); }
     g.strokeStyle = dark ? '#3a1e14' : '#9a4a42'; g.lineWidth = 4;
     if (face === 1 || face === 5) { g.fillStyle = '#5a1f1a'; g.beginPath(); g.moveTo(cx - 18, ey + 48); g.quadraticCurveTo(cx, ey + 66, cx + 18, ey + 48); g.closePath(); g.fill(); g.fillStyle = '#fff'; g.fillRect(cx - 13, ey + 49, 26, 5); }
     else if (face === 2) { g.beginPath(); g.moveTo(cx - 14, ey + 52); g.lineTo(cx + 14, ey + 51); g.stroke(); }
@@ -935,57 +933,131 @@ function faceTex(skin, face, beard, hc) {
   });
 }
 const BLANK = srgbTex(new THREE.CanvasTexture(document.createElement('canvas')));
-const HM = new Map();
-const hairMat = c => { if (!HM.has(c)) HM.set(c, new THREE.MeshStandardMaterial({ color: c, roughness: 0.62, metalness: 0, envMapIntensity: 0.6 })); return HM.get(c); };
-// Microdetalle procedural: trama del tejido de la camiseta y poros/sudor de la piel (relieve y rugosidad)
-const WEAVE = ctex('weave', 512, 256, (g, w, h) => { g.fillStyle = '#808080'; g.fillRect(0, 0, w, h); for (let y = 0; y < h; y += 4) { g.fillStyle = '#9c9c9c'; g.fillRect(0, y, w, 2); } for (let x = 0; x < w; x += 4) { g.fillStyle = 'rgba(0,0,0,.14)'; g.fillRect(x, 0, 2, h); } }, true);
+/* =========================================================
+   MATERIALES DE JUGADOR (PBR)
+   ========================================================= */
+// Microdetalle procedural (mapas de datos, espacio lineal)
 const PORES = ctex('pores', 512, 256, (g, w, h) => { g.fillStyle = '#7a7a7a'; g.fillRect(0, 0, w, h); for (let i = 0; i < 9000; i++) { const v = 90 + Math.random() * 80 | 0; g.fillStyle = `rgb(${v},${v},${v})`; g.fillRect(Math.random() * w, Math.random() * h, 1.4, 1.4); } }, true);
-// rugosidad: piel algo mate con gotas de sudor brillantes (zonas oscuras = más brillo)
+// rugosidad: piel algo mate con gotas de sudor brillantes en la frente (zonas oscuras = más brillo)
 const SWEAT = ctex('sweat', 512, 256, (g, w, h) => { g.fillStyle = '#9a9a9a'; g.fillRect(0, 0, w, h); const gr = g.createLinearGradient(0, 40, 0, 150); gr.addColorStop(0, 'rgba(40,40,40,.55)'); gr.addColorStop(1, 'rgba(40,40,40,0)'); g.fillStyle = gr; g.fillRect(w * 0.55, 40, w * 0.4, 110); for (let i = 0; i < 260; i++) { const x = w * (0.55 + Math.random() * 0.4), y = 50 + Math.random() * 150, r = 1 + Math.random() * 2.6; g.fillStyle = '#141414'; g.beginPath(); g.ellipse(x, y, r, r * 1.4, 0, 0, 7); g.fill(); } for (let i = 0; i < 4000; i++) { g.fillStyle = Math.random() < 0.5 ? '#b0b0b0' : '#7c7c7c'; g.fillRect(Math.random() * w, Math.random() * h, 1, 1); } }, true);
 const EYE = ctex('eye', 128, 64, (g, w, h) => { g.fillStyle = '#f3efe8'; g.fillRect(0, 0, w, h); const x = w * 0.75, y = h * 0.5; const gr = g.createRadialGradient(x, y, 1, x, y, 11); gr.addColorStop(0, '#120a06'); gr.addColorStop(0.3, '#1a0f08'); gr.addColorStop(0.35, '#5b3a22'); gr.addColorStop(0.9, '#3a2414'); gr.addColorStop(1, '#1a1009'); g.fillStyle = gr; g.beginPath(); g.ellipse(x, y, 11, 13, 0, 0, 7); g.fill(); g.fillStyle = 'rgba(160,60,60,.18)'; g.fillRect(0, 0, w * 0.4, h); });
-const HEAD_R = 0.12;
-function buildHair(grp, style, color) {
-  while (grp.children.length) { const c = grp.children.pop(); c.geometry.dispose(); }
-  const mat = hairMat(color);
-  const add = (geo, x, y, z, sx = 1, sy = 1, sz = 1, rx = 0) => { const m = new THREE.Mesh(geo, mat); m.position.set(x, y, z); m.scale.set(sx, sy, sz); m.rotation.x = rx; m.castShadow = true; grp.add(m); return m; };
-  const cap = (r = 1.09, len = 0.52) => add(new THREE.SphereGeometry(HEAD_R * r, 18, 10, 0, Math.PI * 2, 0, Math.PI * len), 0, 0.006, 0.008, 1, 1.13, 1.06, 0.32);
-  switch (style) {
-    case 'corto': cap(); break;
-    case 'rapado': cap(1.03, 0.47); break;
-    case 'tupe': cap(); add(new THREE.SphereGeometry(0.07, 10, 8), 0, 0.12, -0.065, 1.25, 0.65, 0.95); break;
-    case 'largo': cap(1.1, 0.56); add(new THREE.BoxGeometry(0.25, 0.2, 0.07), 0, -0.05, 0.1); for (const sx of [-1, 1]) add(new THREE.BoxGeometry(0.05, 0.16, 0.16), sx * 0.115, -0.02, 0.03); break;
-    case 'afro': add(new THREE.IcosahedronGeometry(0.17, 1), 0, 0.06, 0.02, 1, 0.95, 1); break;
-    case 'rizos': cap(1.1); for (const [x, z] of [[-0.06, -0.03], [0.06, -0.03], [0, 0.03], [-0.07, 0.06], [0.07, 0.06], [0, -0.07]]) add(new THREE.IcosahedronGeometry(0.045, 0), x, 0.12, z); break;
-    case 'cresta': cap(1.02, 0.45); add(new THREE.BoxGeometry(0.035, 0.07, 0.22), 0, 0.14, 0.01); break;
-    case 'mono': cap(); add(new THREE.SphereGeometry(0.05, 10, 8), 0, 0.11, 0.09); break;
-  }
+// Tejido: mapa de normales de una trama de 4 px repetida con mipmaps (sin moiré a distancia)
+const WEAVE_N = (() => { const cv = document.createElement('canvas'); cv.width = cv.height = 64; const g = cv.getContext('2d'); g.fillStyle = '#707070'; g.fillRect(0, 0, 64, 64); for (let y = 0; y < 64; y += 4) for (let x = 0; x < 64; x += 4) { g.fillStyle = (x + y) % 8 ? '#b0b0b0' : '#909090'; g.fillRect(x, y, 3, 3); } const t = heightToNormal(cv, 1.6); t.repeat.set(26, 14); return t; })();
+const PATTERN_ID = { solid: 0, stripes: 1, hoops: 2, band: 3, sash: 4, center: 5, checker: 6, half: 7 };
+// Camiseta: MeshPhysical con sheen (tela) y un shader que combina primario/secundario/acento según el patrón del equipo,
+// calculado en el espacio del objeto (vale para el torso del muñeco y para la malla de un GLB), más las calcomanías.
+function kitMaterial(withDecal) {
+  const U = { uA: { value: new THREE.Color() }, uB: { value: new THREE.Color() }, uT: { value: new THREE.Color() }, uPat: { value: 0 }, uBox: { value: new THREE.Vector4(-0.23, 0.23, 0.08, 0.68) }, uDecal: { value: BLANK }, uDecalOn: { value: withDecal ? 1 : 0 } };
+  const m = new THREE.MeshPhysicalMaterial({ color: 0xffffff, roughness: 0.74, metalness: 0, sheen: 0.6, sheenRoughness: 0.72, sheenColor: new THREE.Color(0x888888), normalMap: WEAVE_N, normalScale: new THREE.Vector2(0.35, 0.35) });
+  m.userData.kitU = U;
+  m.onBeforeCompile = sh => {
+    Object.assign(sh.uniforms, U);
+    sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nvarying vec3 vObj;').replace('#include <begin_vertex>', '#include <begin_vertex>\nvObj = position;');
+    sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nuniform vec3 uA; uniform vec3 uB; uniform vec3 uT; uniform int uPat; uniform vec4 uBox; uniform sampler2D uDecal; uniform float uDecalOn; varying vec3 vObj;')
+      .replace('#include <map_fragment>', `
+        float nx = clamp((vObj.x - uBox.x) / (uBox.y - uBox.x), 0.0, 1.0), ny = clamp((vObj.y - uBox.z) / (uBox.w - uBox.z), 0.0, 1.0);
+        bool front = vObj.z < 0.0; float sec = 0.0;
+        if (uPat == 1) sec = step(0.5, fract(nx * 7.0));
+        else if (uPat == 2) sec = step(0.5, fract(ny * 4.5));
+        else if (uPat == 3) sec = step(0.44, ny) * step(ny, 0.6);
+        else if (uPat == 4) sec = front ? step(abs((1.0 - nx) - ny * 0.9 - 0.05), 0.11) : step(abs(nx - ny * 0.9 - 0.05), 0.11);
+        else if (uPat == 5) sec = step(abs(nx - 0.5), 0.1);
+        else if (uPat == 6) sec = mod(floor(nx * 7.0) + floor(ny * 6.0), 2.0);
+        else if (uPat == 7) sec = front ? step(nx, 0.5) : step(0.5, nx);
+        vec3 kc = mix(uA, uB, sec);
+        // cuello en V y ribete inferior con el color de acento
+        if (uDecalOn > 0.5) { if (front && ny > 0.86 - abs(nx - 0.5) * 1.1 && abs(nx - 0.5) < 0.12) kc = uT; if (ny < 0.035) kc = uT; }
+        diffuseColor.rgb *= kc;
+        if (uDecalOn > 0.5) { vec2 du = vec2(front ? (1.0 - nx) * 0.5 : 0.5 + nx * 0.5, ny); vec4 dc = texture2D(uDecal, du); diffuseColor.rgb = mix(diffuseColor.rgb, dc.rgb, dc.a); }
+      `);
+  };
+  m.customProgramCacheKey = () => 'kit' + (withDecal ? 1 : 0);
+  return m;
 }
+// Piel: MeshPhysical (rugosidad 0.45-0.6) con iluminación envolvente («wrap lighting») y un tinte rojizo en la transición
+// luz/sombra como aproximación barata de la dispersión subsuperficial
+const SKIN_CHUNK = (() => {
+  const src = THREE.ShaderChunk.lights_physical_pars_fragment, target = 'reflectedLight.directDiffuse += irradiance * BRDF_Lambert( material.diffuseContribution ) * ( 1.0 - F );';
+  if (!src.includes(target)) { console.warn('[render] no se encontró el término difuso del shader físico: la piel usa iluminación estándar'); return null; }
+  return src.replace(target, 'float wrapNL = saturate( ( dot( geometryNormal, directLight.direction ) + 0.4 ) / 1.4 ); vec3 sss = vec3( 1.0, 0.42, 0.3 ) * max( wrapNL - dotNL, 0.0 ) * 0.55;\n\treflectedLight.directDiffuse += ( wrapNL + sss ) * directLight.color * BRDF_Lambert( material.diffuseContribution ) * ( 1.0 - F );');
+})();
+function skinMaterial(o = {}) {
+  const m = new THREE.MeshPhysicalMaterial(Object.assign({ color: 0xe0b48a, roughness: 0.52, metalness: 0, roughnessMap: SWEAT, bumpMap: PORES, bumpScale: 0.6, specularIntensity: 0.6 }, o));
+  if (SKIN_CHUNK) { m.onBeforeCompile = sh => { sh.fragmentShader = sh.fragmentShader.replace('#include <lights_physical_pars_fragment>', SKIN_CHUNK); }; m.customProgramCacheKey = () => 'skin'; }
+  return m;
+}
+/* ---------- Pelo con «cards» (tiras con textura de mechones y alphaTest), nunca esferas ---------- */
+const HAIR_TEX = ctex('hairstrands', 128, 256, (g, w, h) => {
+  g.clearRect(0, 0, w, h);
+  for (let i = 0; i < 420; i++) { const x = Math.random() * w, a = rand(0.45, 1), len = h * rand(0.6, 1); g.strokeStyle = `rgba(255,255,255,${a})`; g.lineWidth = rand(1, 2.4); g.beginPath(); g.moveTo(x, 0); g.quadraticCurveTo(x + rand(-6, 6), len * 0.5, x + rand(-10, 10), len); g.stroke(); }
+}, true);
+const HM = new Map();
+const hairMat = c => { if (!HM.has(c)) HM.set(c, new THREE.MeshStandardMaterial({ color: c, roughness: 0.55, metalness: 0, alphaMap: HAIR_TEX, alphaTest: 0.35, alphaToCoverage: true, side: THREE.DoubleSide, envMapIntensity: 0.7 })); return HM.get(c); };
+const HEAD_R = 0.12, HEAD_S = [1, 1.13, 1.06];
+// Tiras sobre una elipsoide algo mayor que la cabeza; φ = 0 es la nuca (+z), φ = π la cara (-z)
+function hairGeometry(style) {
+  const P = [], UV = [], I = [];
+  const strip = (phi, wid, th0, th1, off, lift = 0, curl = 0) => {
+    const seg = 7, base = P.length / 3;
+    for (let i = 0; i <= seg; i++) {
+      const t = i / seg, th = lerp(th0, th1, t), r = HEAD_R * (off + lift * Math.sin(t * Math.PI) + curl * Math.sin(t * 9 + phi * 3) * 0.04);
+      for (const sd of [-0.5, 0.5]) { const ph = phi + sd * wid; P.push(r * Math.sin(th) * Math.sin(ph) * HEAD_S[0], r * Math.cos(th) * HEAD_S[1], r * Math.sin(th) * Math.cos(ph) * HEAD_S[2]); UV.push(sd + 0.5, 1 - t); }
+    }
+    for (let i = 0; i < seg; i++) { const a = base + i * 2; I.push(a, a + 2, a + 1, a + 1, a + 2, a + 3); }
+  };
+  // límite del pelo: más alto en la frente que en la nuca
+  const line = (phi, front, back) => lerp(front, back, (1 + Math.cos(phi)) / 2);
+  const cap = (n, off, front, back, layers = 2, curl = 0) => { for (let L = 0; L < layers; L++) for (let k = 0; k < n; k++) { const phi = (k + L * 0.5) / n * Math.PI * 2; strip(phi, Math.PI * 2 / n * 1.5, 0.02, line(phi, front, back) * Math.PI, off + L * 0.025, 0.04, curl); } };
+  switch (style) {
+    case 'corto': cap(22, 1.03, 0.36, 0.52); break;
+    case 'rapado': cap(20, 1.012, 0.38, 0.5, 1); break;
+    case 'tupe': cap(22, 1.03, 0.36, 0.52); for (let k = -3; k <= 3; k++) strip(Math.PI + k * 0.13, 0.22, 0.02, 0.3 * Math.PI, 1.1, 0.35); break;
+    case 'largo': cap(22, 1.04, 0.36, 0.78); break;
+    case 'afro': cap(26, 1.28, 0.42, 0.55, 3, 1); break;
+    case 'rizos': cap(24, 1.1, 0.38, 0.54, 2, 0.8); break;
+    case 'cresta': cap(18, 1.008, 0.4, 0.5, 1); for (let k = 0; k < 9; k++) strip(k % 2 ? 0.04 : -0.04, 0.16, 0.02 + k * 0.09, 0.12 + k * 0.09, 1.25, 0.15); break;
+    case 'mono': cap(22, 1.03, 0.36, 0.5); for (let k = 0; k < 8; k++) strip(k / 8 * Math.PI * 2, 0.9, 0.15 * Math.PI, 0.22 * Math.PI, 1.42, 0.12, 0.5); break;
+  }
+  const geo = new THREE.BufferGeometry(); geo.setAttribute('position', new THREE.Float32BufferAttribute(P, 3)); geo.setAttribute('uv', new THREE.Float32BufferAttribute(UV, 2)); geo.setIndex(I); geo.computeVertexNormals();
+  return geo;
+}
+const HAIR_GEO = new Map();
+function buildHair(grp, style, color) {
+  while (grp.children.length) grp.remove(grp.children[0]);
+  if (style === 'calvo') return;
+  if (!HAIR_GEO.has(style)) HAIR_GEO.set(style, hairGeometry(style));
+  const m = new THREE.Mesh(HAIR_GEO.get(style), hairMat(color)); m.castShadow = true; grp.add(m);
+}
+/* =========================================================
+   FIGURA PROCEDURAL (respaldo sin modelos GLB) — misma API de articulaciones que usa el motor de momentos
+   ========================================================= */
+// Torso por revolución: pecho, hombros redondeados que cierran hacia el cuello (sin tapa plana de «lata»)
+const TORSO_GEO = (() => { const pts = [[0.168, 0.08], [0.172, 0.2], [0.2, 0.34], [0.224, 0.45], [0.236, 0.53], [0.226, 0.585], [0.18, 0.628], [0.11, 0.656], [0.062, 0.675], [0.05, 0.682]].map(([r, y]) => new THREE.Vector2(r, y)); const g = new THREE.LatheGeometry(pts, 20); g.scale(1, 1, 0.64); return g; })();
+// Nariz: cuña con puente, punta y aletas
+const NOSE_GEO = (() => { const v = [[0, 0.852, -0.121], [0, 0.806, -0.146], [-0.018, 0.796, -0.126], [0.018, 0.796, -0.126], [0, 0.792, -0.124]]; const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(v.flat(), 3)); g.setIndex([0, 1, 2, 0, 3, 1, 1, 4, 2, 1, 3, 4]); g.computeVertexNormals(); return g; })();
 function makeFigure() {
   const g = new THREE.Group(), seg = 10;
-  // Materiales físicos (PBR): tejido con trama, piel con poros y sudor, botas satinadas
-  const fabric = o => new THREE.MeshStandardMaterial(Object.assign({ map: BLANK, roughness: 0.78, metalness: 0, bumpMap: WEAVE, bumpScale: 0.0022, envMapIntensity: 0.7 }, o));
-  const skinM = o => new THREE.MeshStandardMaterial(Object.assign({ color: 0xe0b48a, roughness: 0.5, metalness: 0, roughnessMap: SWEAT, bumpMap: PORES, bumpScale: 0.0012, envMapIntensity: 0.9 }, o));
-  const mats = { jersey: fabric(), sleeve: fabric({ map: null, color: 0xffffff, bumpMap: null }), shorts: fabric(), sock: fabric({ roughness: 0.9, bumpMap: null }), skin: skinM(), boot: new THREE.MeshStandardMaterial({ color: 0x111111, roughness: 0.28, metalness: 0.15, envMapIntensity: 1.2 }), head: skinM({ map: BLANK, color: 0xffffff }), glove: fabric({ map: null, color: GLOVE, bumpMap: null, roughness: 0.6 }), eye: new THREE.MeshStandardMaterial({ map: EYE, roughness: 0.06, metalness: 0, envMapIntensity: 1.6 }) };
-  const mesh = (geo, m, x = 0, y = 0, z = 0, par = g) => { const o = new THREE.Mesh(geo, m); o.position.set(x, y, z); o.castShadow = true; par.add(o); return o; };
+  const fabric = (o = {}) => new THREE.MeshPhysicalMaterial(Object.assign({ map: BLANK, roughness: 0.78, metalness: 0, sheen: 0.5, sheenRoughness: 0.8, sheenColor: new THREE.Color(0x777777) }, o));
+  const mats = { jersey: kitMaterial(true), sleeve: kitMaterial(false), shorts: fabric(), sock: fabric({ roughness: 0.9 }), skin: skinMaterial(), boot: new THREE.MeshStandardMaterial({ color: 0x111111, roughness: 0.3, metalness: 0.15, envMapIntensity: 1.2 }), head: skinMaterial({ map: BLANK, color: 0xffffff }), glove: fabric({ map: null, color: GLOVE, roughness: 0.6 }), eye: new THREE.MeshStandardMaterial({ map: EYE, roughness: 0.06, metalness: 0, envMapIntensity: 1.6 }) };
+  const doll = [], detail = [];
+  const mesh = (geo, m, x = 0, y = 0, z = 0, par = g, det = false) => { const o = new THREE.Mesh(geo, m); o.position.set(x, y, z); o.castShadow = !det; par.add(o); doll.push(o); if (det) detail.push(o); return o; };
   const cyl = (rt, rb, h) => new THREE.CylinderGeometry(rt, rb, h, seg);
-  // tronco (pivota en la cadera)
   const upper = new THREE.Group(); upper.position.y = 0.93; g.add(upper);
-  mesh(cyl(0.17, 0.165, 0.17), [mats.shorts, mats.sleeve, mats.sleeve], 0, 0.02, 0, upper);
-  const torso = mesh(new THREE.CylinderGeometry(0.225, 0.175, 0.56, 18, 1), [mats.jersey, mats.sleeve, mats.sleeve], 0, 0.36, 0, upper); torso.scale.z = 0.64; torso.geometry.rotateY(-Math.PI / 2);
-  for (const sx of [-1, 1]) mesh(new THREE.SphereGeometry(0.078, seg, 8), mats.sleeve, sx * 0.205, 0.585, 0, upper).scale.set(1, 0.8, 0.85);
+  mesh(cyl(0.17, 0.165, 0.17), [mats.shorts, mats.shorts, mats.shorts], 0, 0.02, 0, upper);
+  mesh(TORSO_GEO, mats.jersey, 0, 0, 0, upper);
   mesh(cyl(0.05, 0.056, 0.09), mats.skin, 0, 0.67, 0, upper);
-  const head = mesh(new THREE.SphereGeometry(HEAD_R, 22, 16), mats.head, 0, 0.82, 0, upper); head.scale.set(1, 1.13, 1.06);
-  mesh(new THREE.BoxGeometry(0.03, 0.05, 0.035), mats.skin, 0, 0.81, -0.125, upper); // nariz
-  // ojos en 3D con córnea brillante (reflejan los focos del estadio)
-  for (const sx of [-1, 1]) { const e = mesh(new THREE.SphereGeometry(0.0155, 14, 10), mats.eye, sx * 0.033, 0.832, -0.111, upper); e.castShadow = false; }
+  const head = mesh(new THREE.SphereGeometry(HEAD_R, 24, 18), mats.head, 0, 0.82, 0, upper); head.scale.set(...HEAD_S);
+  mesh(NOSE_GEO, mats.skin, 0, 0, 0, upper, true);
+  for (const sx of [-1, 1]) mesh(new THREE.SphereGeometry(0.0145, 14, 10), mats.eye, sx * 0.033, 0.832, -0.113, upper, true);
   const hair = new THREE.Group(); hair.position.set(0, 0.82, 0); upper.add(hair);
   const arm = sx => {
-    const pv = new THREE.Group(); pv.position.set(sx * 0.255, 0.58, 0); upper.add(pv);
-    mesh(cyl(0.07, 0.058, 0.28), mats.sleeve, 0, -0.12, 0, pv);
-    mesh(cyl(0.054, 0.045, 0.27), mats.skin, 0, -0.39, 0, pv);
-    const hand = mesh(new THREE.SphereGeometry(0.048, 8, 6), mats.skin, 0, -0.545, 0, pv); hand.scale.set(0.8, 1.15, 1);
+    const pv = new THREE.Group(); pv.position.set(sx * 0.252, 0.57, 0); upper.add(pv);
+    mesh(new THREE.SphereGeometry(0.078, seg, 8), mats.sleeve, sx * -0.008, 0.004, 0, pv).scale.set(1.05, 0.9, 0.85);
+    mesh(cyl(0.066, 0.056, 0.28), mats.sleeve, 0, -0.12, 0, pv);
+    mesh(cyl(0.052, 0.043, 0.27), mats.skin, 0, -0.39, 0, pv);
+    const hand = mesh(new THREE.SphereGeometry(0.046, 8, 6), mats.skin, 0, -0.545, 0, pv, true); hand.scale.set(0.8, 1.15, 1);
     const glove = mesh(new THREE.SphereGeometry(0.068, 8, 6), mats.glove, 0, -0.55, 0, pv); glove.scale.set(0.85, 1.2, 1.1); glove.visible = false;
-    pv.userData.hand = hand; return pv;
+    pv.userData.hand = hand; pv.userData.glove = glove; return pv;
   };
   const armL = arm(-1), armR = arm(1);
   const leg = sx => {
@@ -993,30 +1065,177 @@ function makeFigure() {
     mesh(cyl(0.112, 0.102, 0.22), mats.shorts, 0, -0.09, 0, pv);
     mesh(cyl(0.094, 0.07, 0.46), mats.skin, 0, -0.23, 0, pv);
     const knee = new THREE.Group(); knee.position.y = -0.45; pv.add(knee);
-    mesh(new THREE.SphereGeometry(0.07, 8, 6), mats.skin, 0, 0, 0, knee);
+    mesh(new THREE.SphereGeometry(0.07, 8, 6), mats.skin, 0, 0, 0, knee, true);
     mesh(cyl(0.072, 0.05, 0.4), mats.sock, 0, -0.21, 0, knee);
-    const boot = mesh(new THREE.BoxGeometry(0.11, 0.08, 0.26), mats.boot, 0, -0.44, -0.045, knee);
-    mesh(new THREE.SphereGeometry(0.05, 8, 6), mats.boot, 0, -0.44, -0.16, knee).scale.set(1, 0.75, 1);
-    pv.userData.knee = knee; pv.userData.boot = boot; return pv;
+    mesh(new THREE.BoxGeometry(0.11, 0.08, 0.26), mats.boot, 0, -0.44, -0.045, knee);
+    mesh(new THREE.SphereGeometry(0.05, 8, 6), mats.boot, 0, -0.44, -0.16, knee, true).scale.set(1, 0.75, 1);
+    pv.userData.knee = knee; return pv;
   };
   const legL = leg(-1), legR = leg(1);
   // sombra de contacto (oclusión bajo los pies); se mantiene pegada al suelo aunque la figura salte
   const blob = new THREE.Mesh(new THREE.PlaneGeometry(0.95, 0.95), blobMat); blob.rotation.x = -Math.PI / 2; blob.position.y = 0.012; blob.renderOrder = 1; g.add(blob);
-  g.userData = { blob, mats, hair, legL, legR, armL, armR, upper, kneeL: legL.userData.knee, kneeR: legR.userData.knee, gloves: [armL, armR].map(a => a.children.find(c => c.material === mats.glove)) };
+  g.userData = { blob, mats, hair, legL, legR, armL, armR, upper, kneeL: legL.userData.knee, kneeR: legR.userData.knee, gloves: [armL.userData.glove, armR.userData.glove], doll, detail, far: false, model: null };
   return g;
 }
 function dressFigure(f, lk) {
-  const u = f.userData, k = lk.kit, M = u.mats;
-  M.jersey.map = jerseyTex(k, lk.name || '', lk.num ?? ''); M.jersey.needsUpdate = true;
-  M.sleeve.color.setHex(k.sl ?? k.a);
+  const u = f.userData, k = lk.kit, M = u.mats, kc = c => new THREE.Color(c);
+  for (const [m, deco] of [[M.jersey, true], [M.sleeve, false]]) {
+    const U = m.userData.kitU; U.uA.value.copy(kc(deco ? k.a : (k.sl ?? k.a))); U.uB.value.copy(kc(deco ? k.b : (k.sl ?? k.a))); U.uT.value.copy(kc(k.t)); U.uPat.value = deco ? (PATTERN_ID[k.p] || 0) : 0;
+    if (deco) U.uDecal.value = decalTex(k, lk.name || '', lk.num ?? '');
+    m.sheenColor.copy(kc(k.a)).lerp(new THREE.Color(1, 1, 1), 0.35).multiplyScalar(0.6);
+  }
   M.shorts.map = shortsTex(k); M.shorts.needsUpdate = true;
   M.sock.map = sockTex(k); M.sock.needsUpdate = true;
-  M.skin.color.setHex(lk.skin); M.boot.color.setHex(lk.boots); M.sleeve.color.setHex(k.sl ?? k.a);
+  M.skin.color.setHex(lk.skin); M.boot.color.setHex(lk.boots);
   M.head.map = faceTex(lk.skin, lk.face, lk.beard, lk.hairColor); M.head.needsUpdate = true;
-  u.gloves.forEach(gl => gl.visible = !!lk.glove); [u.armL, u.armR].forEach(a => a.userData.hand.visible = !lk.glove);
+  u.gloves.forEach(gl => gl.visible = !!lk.glove && !u.model); [u.armL, u.armR].forEach(a => a.userData.hand.visible = !lk.glove && !u.model && !u.far);
   buildHair(u.hair, lk.hair, lk.hairColor);
+  if (u.model) PV.dress(f);
   u.look = lk;
 }
+// LOD del muñeco: lejos de la cámara se ocultan los detalles pequeños (ojos, nariz, manos, rodillas, punteras)
+const LOD_FAR2 = 26 * 26;
+function updateLOD(f) {
+  const u = f.userData; if (!u.detail || u.model) return;
+  const far = camera.position.distanceToSquared(f.getWorldPosition(_lodV)) > LOD_FAR2;
+  if (far === u.far) return; u.far = far;
+  const hands = [u.armL.userData.hand, u.armR.userData.hand], gloved = !!(u.look && u.look.glove);
+  for (const m of u.detail) m.visible = !far && !(hands.includes(m) && gloved);
+}
+const _lodV = new V3();
+/* =========================================================
+   ASSETMANAGER + PLAYERVIEW (modelos GLB/glTF con skinning)
+   El motor de momentos sigue moviendo los pivotes de la figura (userData.legL, armR, upper…). PlayerView es solo vista:
+   - si hay clips en el GLB, un AnimationMixer reproduce idle/run/sprint/kick/celebrate según el estado, con fundidos;
+   - si falta un clip, copia la pose de los pivotes a los huesos (adaptador);
+   - si no hay modelo (o falla), se queda el muñeco procedural con los materiales PBR.
+   ========================================================= */
+const AM = (() => {
+  let gl = null; const cache = new Map();
+  function loader() {
+    if (gl) return gl; const A = THREE.addons;
+    gl = new A.GLTFLoader();
+    const draco = new A.DRACOLoader(); draco.setDecoderPath('assets/decoders/draco/'); gl.setDRACOLoader(draco);
+    try { gl.setKTX2Loader(new A.KTX2Loader().setTranscoderPath('assets/decoders/basis/').detectSupport(renderer)); } catch (e) { console.warn('[assets] KTX2 no disponible', e); }
+    gl.setMeshoptDecoder(A.MeshoptDecoder); return gl;
+  }
+  function loadModel(id) {
+    const e = ASSETS.manifest && ASSETS.manifest.models && ASSETS.manifest.models[id];
+    if (!e || !e.disponible) return Promise.resolve(null);
+    if (!cache.has(id)) cache.set(id, new Promise(res => loader().load(e.url, g => res({ gltf: g, entry: e }), undefined, err => { console.warn(`[assets] modelo ${id} no disponible (${e.url}); se usa el muñeco procedural`, err); res(null); })));
+    return cache.get(id);
+  }
+  const parse = (buf, entry) => new Promise((res, rej) => loader().parse(buf, '', g => res({ gltf: g, entry }), rej));
+  return { loader, loadModel, parse };
+})();
+const PV = (() => {
+  // nombres de huesos por convención de rig (los del manifest tienen prioridad)
+  const RIGS = {
+    mixamo: { hips: 'mixamorigHips', spine: 'mixamorigSpine1', head: 'mixamorigHead', armL: 'mixamorigLeftArm', armR: 'mixamorigRightArm', legL: 'mixamorigLeftUpLeg', legR: 'mixamorigRightUpLeg', kneeL: 'mixamorigLeftLeg', kneeR: 'mixamorigRightLeg' },
+    generic: { hips: 'Hips', spine: 'Spine', head: 'Head', armL: 'UpperArm.L', armR: 'UpperArm.R', legL: 'UpperLeg.L', legR: 'UpperLeg.R', kneeL: 'LowerLeg.L', kneeR: 'LowerLeg.R' },
+  };
+  const STATES = ['idle', 'run', 'sprint', 'kick', 'celebrate'];
+  let base = null;
+  const _q = new THREE.Quaternion(), _e = new THREE.Euler();
+  function attach(f, b) {
+    const u = f.userData, e = b.entry, A = THREE.addons;
+    const root = A.SkeletonUtils.clone(b.gltf.scene); root.scale.setScalar(e.escala || 1); root.rotation.y = e.rotY ?? Math.PI;
+    const names = Object.assign({}, RIGS[e.rig || 'generic'], e.huesos || {}), bones = {};
+    root.traverse(o => {
+      // GLTFLoader limpia los nombres (quita '.', ':' y espacios): se comparan normalizados
+      const nb = x => x.replace(/[\s:_.\-]/g, '').toLowerCase();
+      if (o.isBone) for (const [k, n] of Object.entries(names)) if (nb(o.name) === nb(n)) bones[k] = o;
+      if (o.isSkinnedMesh || o.isMesh) {
+        o.castShadow = true; o.receiveShadow = false;
+        // asignar nuestros materiales (kit, piel, botas…) según el nombre del material original, para que dressFigure siga funcionando
+        const mm = e.materiales || {}, n = (o.material && o.material.name || '').toLowerCase();
+        for (const [slot, list] of Object.entries(mm)) if (list.some(x => n.includes(x.toLowerCase()))) { o.material = u.mats[slot] || o.material; if (slot === 'jersey') { o.geometry.computeBoundingBox(); const bb = o.geometry.boundingBox; u.mats.jersey.userData.kitU.uBox.value.set(bb.min.x, bb.max.x, bb.min.y, bb.max.y); } }
+        if (o.isSkinnedMesh) { o.geometry.computeBoundingSphere(); o.geometry.boundingSphere.radius *= 1.6; } // margen para las poses (frustum culling correcto)
+      }
+    });
+    const bind = {}; for (const [k, bn] of Object.entries(bones)) bind[k] = bn.quaternion.clone();
+    const mixer = new THREE.AnimationMixer(root), actions = {};
+    for (const st of STATES) { const cn = (e.clips || {})[st]; const clip = cn && THREE.AnimationClip.findByName(b.gltf.animations, cn); if (clip) { const a = mixer.clipAction(clip); if (st === 'kick') { a.setLoop(THREE.LoopOnce); a.clampWhenFinished = true; } actions[st] = a; } }
+    f.add(root);
+    u.model = { root, mixer, actions, bones, bind, state: null, entry: e };
+    u.doll.forEach(m => m.visible = false); u.hair.visible = !e.conPelo ? true : false;
+    if (bones.head && !e.conPelo) { u.hair.removeFromParent(); bones.head.add(u.hair); u.hair.position.set(0, (e.alturaCabeza || 0.1) / (e.escala || 1), 0); u.hair.scale.setScalar(1 / (e.escala || 1)); }
+  }
+  function dress(f) { /* los materiales del modelo son los del muñeco: dressFigure ya los actualizó */ }
+  function stateOf(f, sp) { const u = f.userData; if (u.kickA) return 'kick'; if (u.manual && f.position.y > 0.05) return 'celebrate'; return sp > 5.5 ? 'sprint' : sp > 0.4 ? 'run' : 'idle'; }
+  function update(f, dt, sp) {
+    const u = f.userData, md = u.model; if (!md) return;
+    const st = stateOf(f, sp), act = md.actions[st];
+    if (st !== md.state) {
+      const prev = md.state && md.actions[md.state];
+      if (act) {
+        act.reset(); act.enabled = true;
+        if (st === 'kick' && u.kickA) { const d = act.getClip().duration, hit = md.entry.contactoGolpeo ?? 0.45; act.timeScale = d * hit / (u.kickA.def.dur * u.kickA.def.hit + 0.001); }
+        else act.timeScale = st === 'run' || st === 'sprint' ? clamp(sp / (st === 'run' ? 3.5 : 7), 0.6, 1.6) : 1;
+        act.play(); if (prev) prev.crossFadeTo(act, 0.2, false);
+      } else if (prev) prev.fadeOut(0.2);
+      md.state = st;
+    }
+    md.mixer.update(dt);
+    // adaptador: sin clip para este estado → copiar la pose procedural de los pivotes a los huesos
+    if (!act) for (const k of ['spine', 'armL', 'armR', 'legL', 'legR', 'kneeL', 'kneeR']) {
+      const bn = md.bones[k], src = { spine: u.upper, armL: u.armL, armR: u.armR, legL: u.legL, legR: u.legR, kneeL: u.kneeL, kneeR: u.kneeR }[k];
+      if (bn && src) { _q.setFromEuler(_e.set(src.rotation.x * (md.entry.ejeX ?? 1), src.rotation.y, src.rotation.z)); bn.quaternion.copy(md.bind[k]).multiply(_q); }
+    }
+  }
+  function setBase(b) { base = b; if (!b) return; for (const f of [...FIGS, keeper]) { try { attach(f, b); if (f.userData.look) dressFigure(f, f.userData.look); } catch (err) { console.warn('[render] no se pudo montar el modelo en una figura; se mantiene el muñeco', err); } } }
+  return { attach, dress, update, setBase, get base() { return base; } };
+})();
+// Carga del modelo base desde el manifest (solo servido por http/https; si falta o falla, se queda el muñeco)
+ASSETS.ready.then(() => AM.loadModel('player_base')).then(b => { if (b) { PV.setBase(b); console.info('[assets] modelo de jugador GLB activo'); } });
+/* Autoprueba ?selftest=glb: genera EN MEMORIA un humanoide con skinning (huesos, materiales con nombres como los de un modelo real,
+   clips idle/run/celebrate y SIN clip de golpeo, para probar el adaptador), lo exporta a bytes GLB con GLTFExporter y lo carga con
+   GLTFLoader a través de PlayerView. No es un asset: no se guarda ni se commitea. */
+function selftestGLB() {
+  const A = THREE.addons, bone = (n, x, y, z, par) => { const b = new THREE.Bone(); b.name = n; b.position.set(x, y, z); if (par) par.add(b); return b; };
+  const hips = bone('Hips', 0, 0.93, 0), spine = bone('Spine', 0, 0, 0, hips), head = bone('Head', 0, 0.82, 0, spine);
+  const armL = bone('UpperArm.L', -0.252, 0.57, 0, spine), armR = bone('UpperArm.R', 0.252, 0.57, 0, spine);
+  const legL = bone('UpperLeg.L', -0.105, 0, 0, hips), legR = bone('UpperLeg.R', 0.105, 0, 0, hips), kneeL = bone('LowerLeg.L', 0, -0.45, 0, legL), kneeR = bone('LowerLeg.R', 0, -0.45, 0, legR);
+  const bones = [hips, spine, head, armL, armR, legL, legR, kneeL, kneeR], idx = b => bones.indexOf(b);
+  hips.updateMatrixWorld(true);
+  const parts = [], wp = b => b.getWorldPosition(new V3());
+  const add = (geo, b, off, mat) => { geo.translate(off.x, off.y, off.z); parts.push({ geo, b: idx(b), mat }); };
+  add(TORSO_GEO.clone(), spine, new V3(0, 0.93, 0), 0); add(new THREE.CylinderGeometry(0.17, 0.165, 0.2, 12), hips, new V3(0, 0.93, 0), 1);
+  add(new THREE.SphereGeometry(HEAD_R, 20, 14).scale(...HEAD_S), head, wp(head), 2);
+  for (const b of [armL, armR]) { const p = wp(b); add(new THREE.CylinderGeometry(0.066, 0.05, 0.56, 10), b, p.clone().add(new V3(0, -0.27, 0)), 0); }
+  for (const b of [legL, legR]) { const p = wp(b); add(new THREE.CylinderGeometry(0.1, 0.075, 0.46, 10), b, p.clone().add(new V3(0, -0.23, 0)), 1); }
+  for (const b of [kneeL, kneeR]) { const p = wp(b); add(new THREE.CylinderGeometry(0.07, 0.05, 0.44, 10), b, p.clone().add(new V3(0, -0.22, 0)), 3); }
+  // unir las piezas en una geometría con grupos por material e índices de hueso
+  const P = [], N = [], UV = [], SI = [], SW = [], I = [], groups = [];
+  for (const mat of [0, 1, 2, 3]) {
+    const start = I.length;
+    for (const pt of parts.filter(p => p.mat === mat)) {
+      const g = pt.geo.index ? pt.geo : pt.geo, base = P.length / 3, pos = g.attributes.position, nor = g.attributes.normal, uv = g.attributes.uv;
+      for (let i = 0; i < pos.count; i++) { P.push(pos.getX(i), pos.getY(i), pos.getZ(i)); N.push(nor.getX(i), nor.getY(i), nor.getZ(i)); UV.push(uv.getX(i), uv.getY(i)); SI.push(pt.b, 0, 0, 0); SW.push(1, 0, 0, 0); }
+      const ix = g.index.array; for (let i = 0; i < ix.length; i++) I.push(ix[i] + base);
+    }
+    groups.push([start, I.length - start, mat]);
+  }
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.Float32BufferAttribute(P, 3)); geo.setAttribute('normal', new THREE.Float32BufferAttribute(N, 3)); geo.setAttribute('uv', new THREE.Float32BufferAttribute(UV, 2));
+  geo.setAttribute('skinIndex', new THREE.Uint16BufferAttribute(SI, 4)); geo.setAttribute('skinWeight', new THREE.Float32BufferAttribute(SW, 4)); geo.setIndex(I);
+  groups.forEach(([st, c, m]) => geo.addGroup(st, c, m));
+  const mats = ['Shirt', 'Shorts', 'Skin_Head', 'Socks'].map((n, i) => { const m = new THREE.MeshStandardMaterial({ color: [0xaaaaaa, 0x333333, 0xe0b48a, 0xffffff][i] }); m.name = n; return m; });
+  const sk = new THREE.SkinnedMesh(geo, mats); sk.name = 'Jugador'; sk.add(hips); sk.bind(new THREE.Skeleton(bones));
+  const scn = new THREE.Scene(); scn.add(sk);
+  const qx = a => new THREE.Quaternion().setFromAxisAngle(new V3(1, 0, 0), a).toArray(), qz = a => new THREE.Quaternion().setFromAxisAngle(new V3(0, 0, 1), a).toArray();
+  const track = (b, times, qs) => new THREE.QuaternionKeyframeTrack(b + '.quaternion', times, qs.flat());
+  const clips = [
+    new THREE.AnimationClip('idle', 2, [track('Spine', [0, 1, 2], [qx(0), qx(0.04), qx(0)]), track('UpperArm.L', [0, 1, 2], [qz(-0.08), qz(-0.12), qz(-0.08)]), track('UpperArm.R', [0, 1, 2], [qz(0.08), qz(0.12), qz(0.08)])]),
+    new THREE.AnimationClip('run', 0.7, [track('UpperLeg.L', [0, 0.35, 0.7], [qx(0.7), qx(-0.7), qx(0.7)]), track('UpperLeg.R', [0, 0.35, 0.7], [qx(-0.7), qx(0.7), qx(-0.7)]), track('LowerLeg.L', [0, 0.175, 0.35, 0.525, 0.7], [qx(-0.2), qx(-1.1), qx(-0.2), qx(-0.1), qx(-0.2)]), track('LowerLeg.R', [0, 0.175, 0.35, 0.525, 0.7], [qx(-0.2), qx(-0.1), qx(-0.2), qx(-1.1), qx(-0.2)]), track('UpperArm.L', [0, 0.35, 0.7], [qx(-0.6), qx(0.6), qx(-0.6)]), track('UpperArm.R', [0, 0.35, 0.7], [qx(0.6), qx(-0.6), qx(0.6)]), track('Spine', [0, 0.7], [qx(-0.2), qx(-0.2)])]),
+    new THREE.AnimationClip('celebrate', 0.6, [track('UpperArm.L', [0, 0.3, 0.6], [qz(-2.7), qz(-2.9), qz(-2.7)]), track('UpperArm.R', [0, 0.3, 0.6], [qz(2.7), qz(2.9), qz(2.7)])]),
+  ];
+  return new Promise((res, rej) => new A.GLTFExporter().parse(scn, buf => res(buf), rej, { binary: true, animations: clips })).then(buf => {
+    const entry = { rig: 'generic', escala: 1, rotY: 0, clips: { idle: 'idle', run: 'run', sprint: 'run', celebrate: 'celebrate' }, materiales: { jersey: ['shirt'], shorts: ['shorts'], head: ['skin_head'], sock: ['socks'] }, alturaCabeza: 0, contactoGolpeo: 0.45, sintetico: true };
+    return AM.parse(buf, entry).then(b => { PV.setBase(b); window.__glbListo = { bytes: buf.byteLength, clips: b.gltf.animations.map(a => a.name), huesos: Object.keys(FIGS[0].userData.model.bones) }; console.info('[selftest] GLB sintético cargado', window.__glbListo); });
+  }).catch(err => { window.__glbListo = { error: String(err) }; console.warn('[selftest] fallo', err); });
+}
+if (QS.get('selftest') === 'glb') selftestGLB();
 function resetLimbs(f) { const u = f.userData; for (const l of [u.legL, u.legR, u.armL, u.armR, u.kneeL, u.kneeR, u.upper]) l.rotation.set(0, 0, 0); u.upper.position.y = 0.93; u.kickA = null; }
 const npcLook = (kit, num) => ({ kit, name: pick(SURNAMES), num: num ?? randi(2, 23), skin: pick(SKINS), hair: pick(HAIR_IDS), hairColor: pick(HAIR_COLS.slice(0, 7)), face: randi(0, 5), boots: pick(BOOTS), beard: Math.random() < 0.22 });
 
@@ -1335,15 +1554,15 @@ function stepKick(f, dt) {
 }
 function groundBlob(f, rootY = 0) { const b = f.userData.blob, h = f.position.y + rootY; b.position.y = 0.012 - h; const k = clamp(1 - h * 0.7, 0.35, 1); b.scale.set(k, k, k); }
 function animFigures(dt) {
-  groundBlob(keeper, keeperRoot.position.y);
+  groundBlob(keeper, keeperRoot.position.y); updateLOD(keeper); if (keeper.userData.model) PV.update(keeper, dt, 0);
   for (const f of FIGS) {
-    if (f.visible) groundBlob(f);
+    if (f.visible) { groundBlob(f); updateLOD(f); if (f.userData.model) PV.update(f, dt, f.userData.lastSp || 0); }
     const u = f.userData;
     // el golpeo avanza aunque la figura esté oculta (en 1ª persona no se ve al protagonista)
     if (u.kickA) { stepKick(f, dt); if (u.last) u.last.copy(f.position); continue; }
     if (!f.visible) continue;
     if (!u.last) { u.last = f.position.clone(); continue; }
-    const dx = f.position.x - u.last.x, dz = f.position.z - u.last.z, sp = Math.hypot(dx, dz) / Math.max(dt, 1e-3);
+    const dx = f.position.x - u.last.x, dz = f.position.z - u.last.z, sp = Math.hypot(dx, dz) / Math.max(dt, 1e-3); u.lastSp = sp;
     u.last.copy(f.position);
     if (u.manual) continue;
     const kk = 1 - Math.exp(-dt * 10);

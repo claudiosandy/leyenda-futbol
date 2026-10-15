@@ -6,9 +6,11 @@
     "build": "node tools/build.mjs",
     "check": "node tools/build.mjs --check && node tools/verificar.mjs",
     "verificar": "node tools/verificar.mjs",
-    "capturas": "node tools/render/capturas.mjs"
+    "capturas": "node tools/render/capturas.mjs",
+    "assets:comprimir": "node tools/assets/comprimir.mjs"
   },
   "devDependencies": {
+    "@gltf-transform/cli": "4.5.1",
     "esbuild": "0.28.2",
     "playwright": "1.56.1"
   },

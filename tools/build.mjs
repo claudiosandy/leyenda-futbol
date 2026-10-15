@@ -3,7 +3,7 @@
 // Uso: node tools/build.mjs            → escribe index.html
 //      node tools/build.mjs --check    → falla si index.html no está al día con src/
 import { build } from 'esbuild';
-import { readFileSync, writeFileSync, existsSync } from 'node:fs';
+import { readFileSync, writeFileSync, existsSync, mkdirSync, copyFileSync } from 'node:fs';
 import { execSync } from 'node:child_process';
 import { join } from 'node:path';
 
@@ -17,8 +17,15 @@ const root = execSync('git rev-parse --show-toplevel').toString().trim();
   else writeFileSync(mp, txt);
   console.log(`assets disponibles: ${n}`);
 }
+// Decodificadores de Draco y Basis (KTX2) servidos localmente desde npm (sin CDN)
+for (const [dir, files] of [['draco', ['draco_decoder.js', 'draco_decoder.wasm', 'draco_wasm_wrapper.js']], ['basis', ['basis_transcoder.js', 'basis_transcoder.wasm']]]) {
+  const dst = join(root, 'assets/decoders', dir); mkdirSync(dst, { recursive: true });
+  for (const f of files) { const src = join(root, 'node_modules/three/examples/jsm/libs', dir, f), d = join(dst, f); if (process.argv.includes('--check')) { if (!existsSync(d) || readFileSync(src).compare(readFileSync(d))) { console.error(`❌ falta o no coincide assets/decoders/${dir}/${f}: ejecuta npm run build`); process.exit(1); } } else copyFileSync(src, d); }
+}
 const pkg = JSON.parse(readFileSync(join(root, 'node_modules/three/package.json'), 'utf8'));
-const res = await build({ entryPoints: [join(root, 'src/three-entry.js')], bundle: true, format: 'iife', minify: true, write: false, target: 'es2020', legalComments: 'inline', logLevel: 'warning' });
+const res = await build({ entryPoints: [join(root, 'src/three-entry.js')], bundle: true, format: 'iife', minify: true, write: false, target: 'es2020', legalComments: 'inline', logLevel: 'warning',
+  // en un script clásico no existe import.meta.url: algunos addons lo usan para resolver rutas relativas
+  define: { 'import.meta.url': 'document.baseURI' } });
 const js = res.outputFiles[0].text.replace(/<\/script/gi, '<\\/script');
 const tpl = readFileSync(join(root, 'src/index.html'), 'utf8');
 if (!tpl.includes('<!--@THREE@-->')) throw new Error('Falta el marcador <!--@THREE@--> en src/index.html');

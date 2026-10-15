@@ -207,3 +207,32 @@ Pendiente de la fase 3: el césped y la grada siguen siendo texturas de canvas s
 - **Assets opcionales:** `assets/manifest.json` (texturas de césped y hormigón, HDRI). El build marca `disponible` según si el archivo existe, y el juego solo pide los disponibles: no hay 404 en consola. Si un asset falla, se avisa y se usa el procedural. Con `file://` siempre se usa lo procedural, porque Chrome no deja usar archivos locales como texturas WebGL. El deploy publica también `assets/`.
 
 **renderer.info en High** (plano general): 948 draw calls y 125 000 triángulos. El público suma unos 26 000 triángulos en 1 draw call.
+
+---
+
+# Fase 4 — Futbolistas: materiales, pelo, LOD y pipeline de modelos (hecha)
+
+- **Kits:** `kitMaterial()` es un `MeshPhysicalMaterial` con *sheen* de tela (0.6, rugosidad de sheen 0.72), mapa de normales de tejido de 64 px con mipmaps (repetición 26×14) y patrón en el shader según el espacio del objeto: liso, rayas, bastones, banda, V, mitades, aros, etc. (`PATTERN_ID`). Dorsal, nombre, escudo genérico y marca genérica van en una `CanvasTexture` sRGB proyectada como calca en la caja del torso (`uBox`). El cuello en V y el bajo solo están en el torso, no en las mangas.
+- **Piel:** `skinMaterial()` es un `MeshPhysicalMaterial` con rugosidad 0.52, poros (bumpMap), rugosidad de sudor y `specularIntensity` 0.6. Sustituye el chunk de difusa directa por *wrap lighting* (0.4) más un tinte rojizo de dispersión subsuperficial barata. El tono sale de los datos del jugador.
+- **Pelo:** tiras de malla (*cards*) sobre el elipsoide de la cabeza, con `alphaMap`, `alphaTest` 0.35 y `alphaToCoverage`. Hay 8 estilos más «calvo», con geometría en caché. Ya **no se usan esferas**.
+- **Cuerpo:** torso con `LatheGeometry` (hombros, pecho y cintura), deltoides, brazos unidos al hombro, nariz y cuencas de ojos 3D en lugar de ojos pintados.
+- **LOD:** a más de 26 m de la cámara se ocultan los detalles (`updateLOD`).
+- **Pipeline de modelos** (`AM` y `PlayerView`): GLTFLoader con Draco, KTX2 (transcodificador Basis) y Meshopt, con decodificadores servidos en local (`assets/decoders/`, los copia el build). `SkeletonUtils.clone` por figura y *bounding sphere* del SkinnedMesh ampliada para que no se recorte. Los materiales se asignan por nombre según el manifest. Los clips idle/run/sprint/kick/celebrate se mezclan con *crossfade* de 0.2 s según la velocidad y el estado que ya calcula la simulación: solo se lee, no se modifica. El golpeo se alinea con el instante de contacto. Si falta un clip, un adaptador copia la pose procedural a los huesos.
+- **HDRI opcional:** si el manifest lo marca como disponible y el preset es High o Ultra, se carga con `HDRLoader` y PMREM. Probado con un `.hdr` sintético interceptado en Playwright (sin commitear): se carga y, con un 404, se avisa y se sigue con el entorno procedural.
+- **Autoprueba `?selftest=glb`:** genera en memoria un humanoide con skin y 3 clips (sin «kick», para forzar el adaptador), lo exporta a GLB con GLTFExporter y lo carga por el camino real. Resultado: 9/9 huesos mapeados y los clips idle, run y celebrate. Capturas en `*_glb_sintetico.png`. Ese GLB (73 KB) pasa por `npm run assets:comprimir`: meshopt reduce el archivo a 19 KB.
+- **Assets:** no se incluye ningún binario. `ASSETS.md` lista los archivos exactos (origen, licencia, destino y tamaño máximo).
+
+**renderer.info en High:**
+
+| Plano | Fase 3 | Muñeco fase 4 | GLB sintético |
+|---|---|---|---|
+| Retrato | — | 99 / 60 012 | — |
+| Frontal | — | 113 / 60 508 | 53 / 56 606 |
+| Plano general | 883 / 118 984 | 720 / 128 400 | 187 / 97 380 |
+
+Con el LOD bajan los draw calls; los triángulos suben por el pelo y el torso torneado. Un GLB con una sola malla por jugador reduce los draw calls unas 4 veces.
+
+**Riesgos:**
+- Los rigs reales pueden tener ejes de hueso distintos, y el adaptador puede girar al revés: se corrige con `ejeX` y `huesos` en el manifest.
+- Con `file://` no se cargan texturas ni GLB externos: solo se usa lo procedural.
+- Las texturas KTX2 sueltas (fuera del GLB) aún no se leen.
