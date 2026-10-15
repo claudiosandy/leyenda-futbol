@@ -180,6 +180,13 @@ table.lt td.pts{font-weight:800;color:#fff}
 .cerS{font-weight:800;letter-spacing:3px;text-transform:uppercase;color:#fff;text-shadow:0 2px 10px #000;font-size:clamp(13px,2.4vw,18px)}
 @keyframes zoomIn{from{transform:scale(.3);opacity:0}to{transform:none;opacity:1}}
 #ui.cer .opts{max-width:360px;margin:16px auto 0}
+/* Retrato cinematográfico 16:9 */
+.lbox{position:fixed;left:0;right:0;background:#000;pointer-events:none;z-index:2}
+#ui.cine{background:none;padding:0;align-items:flex-end;pointer-events:none}
+#ui.cine .card{pointer-events:auto;background:transparent;border:0;box-shadow:none;max-width:none;margin:0;padding:0 clamp(16px,3vw,40px) 0;display:flex;flex-wrap:wrap;gap:12px;align-items:flex-end;justify-content:space-between;width:100%;z-index:3;position:relative}
+.cineT{font-family:'Bebas Neue';font-size:clamp(34px,6vw,72px);line-height:.9;color:#fff;text-shadow:0 4px 24px rgba(0,0,0,.9)}
+.cineT small{display:block;font-family:Inter;font-size:13px;font-weight:800;letter-spacing:3px;color:var(--gold);text-transform:uppercase}
+.cineB{display:flex;gap:8px;flex-wrap:wrap}
 @media (max-width:600px){.hint{font-size:12px}.timer{font-size:32px}.sb{font-size:12px}.sb span{padding:6px 8px}}
 </style>
 </head>
@@ -487,8 +494,9 @@ const clubS = n => eraS(n, S ? S.year : 2025);
 const clubLg = n => CLUB[n] ? CLUB[n].lg : null;
 const team = t => ({ name: t[0], s: t[1] });
 const natTeam = n => ({ name: n, s: natS(n) });
-function cdist(a, b) { const A = new THREE.Color(a), B = new THREE.Color(b); return Math.hypot(A.r - B.r, A.g - B.g, A.b - B.b); }
-function lum(c) { const C = new THREE.Color(c); return 0.299 * C.r + 0.587 * C.g + 0.114 * C.b; }
+const rgb = c => [(c >> 16 & 255) / 255, (c >> 8 & 255) / 255, (c & 255) / 255];
+function cdist(a, b) { const A = rgb(a), B = rgb(b); return Math.hypot(A[0] - B[0], A[1] - B[1], A[2] - B[2]); }
+function lum(c) { const C = rgb(c); return 0.299 * C[0] + 0.587 * C[1] + 0.114 * C[2]; }
 function kitFor(name, nat) {
   let a, b;
   if (nat && NATIONS[name]) { a = NATIONS[name].c; b = NATIONS[name].c2; }
@@ -530,11 +538,15 @@ const sfx = {
    ========================================================= */
 if (typeof THREE === 'undefined') { document.body.innerHTML = '<p style="padding:24px;color:#fff;font-family:sans-serif">No se pudo cargar Three.js. Revisa tu conexión a internet y recarga.</p>'; throw new Error('THREE missing'); }
 const V3 = THREE.Vector3;
+// Flujo de color correcto (sRGB): los colores hexadecimales y las texturas se interpretan en sRGB y se iluminan en espacio lineal
+{ const sh = THREE.Color.prototype.setHex; THREE.Color.prototype.setHex = function (h) { sh.call(this, h); return this.convertSRGBToLinear(); }; }
+{ const CT = THREE.CanvasTexture; THREE.CanvasTexture = class extends CT { constructor(...a) { super(...a); this.encoding = THREE.sRGBEncoding; } }; }
 const canvas = $('#c');
 const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: 'high-performance' });
 renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
 renderer.shadowMap.enabled = true;
 renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+renderer.outputEncoding = THREE.sRGBEncoding; renderer.toneMapping = THREE.ACESFilmicToneMapping; renderer.toneMappingExposure = 1.1;
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(0x050b14);
 scene.fog = new THREE.Fog(0x050b14, 100, 220);
@@ -545,6 +557,16 @@ window.addEventListener('resize', resize); resize();
 
 // Iluminación de estadio nocturno: foco principal con sombras, relleno frío y contraluz para separar a los jugadores del césped
 const hemiL = new THREE.HemisphereLight(0xe4f0ff, 0x22461f, 0.5), ambL = new THREE.AmbientLight(0xffffff, 0.2); scene.add(hemiL, ambL);
+// Mapa de entorno del estadio (cielo nocturno y focos) para reflejos físicos en piel sudada, botas, ojos y trofeos
+const ENV = (() => {
+  const es = new THREE.Scene(); es.background = new THREE.Color(0x0a1220);
+  const sky = new THREE.Mesh(new THREE.SphereGeometry(50, 24, 12), new THREE.MeshBasicMaterial({ color: 0x0b1626, side: THREE.BackSide })); es.add(sky);
+  const grass = new THREE.Mesh(new THREE.CircleGeometry(48, 24), new THREE.MeshBasicMaterial({ color: 0x1d5a26 })); grass.rotation.x = -Math.PI / 2; grass.position.y = -6; es.add(grass);
+  for (let i = 0; i < 4; i++) { const a = Math.PI / 4 + i * Math.PI / 2, l = new THREE.Mesh(new THREE.BoxGeometry(10, 4, 1), new THREE.MeshBasicMaterial({ color: 0xffffff })); l.position.set(Math.cos(a) * 34, 26, Math.sin(a) * 34); l.lookAt(0, 0, 0); es.add(l); }
+  const ring = new THREE.Mesh(new THREE.TorusGeometry(40, 1.2, 6, 48), new THREE.MeshBasicMaterial({ color: 0x8aa0c0 })); ring.rotation.x = Math.PI / 2; ring.position.y = 12; es.add(ring);
+  const pm = new THREE.PMREMGenerator(renderer), t = pm.fromScene(es, 0.04).texture; pm.dispose(); return t;
+})();
+scene.environment = ENV;
 const sun = new THREE.DirectionalLight(0xfff6e6, 0.8);
 sun.position.set(-18, 40, 34); sun.target.position.set(0, 0, 14); scene.add(sun, sun.target);
 sun.castShadow = true; sun.shadow.mapSize.set(2048, 2048);
@@ -717,13 +739,19 @@ function shortsTex(k) {
 // Rostro sobre la esfera de la cabeza: el centro de la cara está en x=¾ de la textura
 function faceTex(skin, face, beard, hc) {
   return ctex(`F${skin}|${face}|${beard ? 1 : 0}|${hc}`, 512, 256, (g, w, h) => {
-    const C = new THREE.Color(skin), sk = (d) => `rgb(${Math.round(clamp(C.r * 255 + d, 0, 255))},${Math.round(clamp(C.g * 255 + d * 0.9, 0, 255))},${Math.round(clamp(C.b * 255 + d * 0.8, 0, 255))})`;
+    const C = rgb(skin), sk = (d) => `rgb(${Math.round(clamp(C[0] * 255 + d, 0, 255))},${Math.round(clamp(C[1] * 255 + d * 0.9, 0, 255))},${Math.round(clamp(C[2] * 255 + d * 0.8, 0, 255))})`;
     g.fillStyle = sk(0); g.fillRect(0, 0, w, h);
     const cx = w * 0.75, ey = 122, dark = lum(skin) < 0.4;
     // sombreado lateral y orejas
     const gr = g.createRadialGradient(cx, 130, 20, cx, 130, 150); gr.addColorStop(0, 'rgba(255,255,255,.06)'); gr.addColorStop(1, 'rgba(0,0,0,.18)'); g.fillStyle = gr; g.fillRect(0, 0, w, h);
     for (const ex of [w * 0.5, w]) { g.fillStyle = sk(-28); g.beginPath(); g.ellipse(ex % w || w - 2, 128, 9, 16, 0, 0, 7); g.fill(); }
-    if (beard) { g.fillStyle = css(hc); g.globalAlpha = 0.85; g.beginPath(); g.moveTo(cx - 62, 128); g.quadraticCurveTo(cx - 58, 222, cx, 232); g.quadraticCurveTo(cx + 58, 222, cx + 62, 128); g.lineTo(cx + 44, 140); g.quadraticCurveTo(cx, 200, cx - 44, 140); g.closePath(); g.fill(); g.globalAlpha = 1; }
+    if (beard) {
+      // barba de varios días: sombra suave y pelos sueltos
+      g.save(); g.beginPath(); g.moveTo(cx - 62, 128); g.quadraticCurveTo(cx - 58, 222, cx, 232); g.quadraticCurveTo(cx + 58, 222, cx + 62, 128); g.lineTo(cx + 44, 140); g.quadraticCurveTo(cx, 200, cx - 44, 140); g.closePath(); g.clip();
+      g.fillStyle = css(hc); g.globalAlpha = 0.35; g.fillRect(cx - 70, 120, 140, 120); g.globalAlpha = 0.7;
+      for (let i = 0; i < 1400; i++) g.fillRect(cx - 66 + Math.random() * 132, 124 + Math.random() * 112, 1.4, 2.2);
+      g.restore(); g.globalAlpha = 1;
+    }
     // cejas
     g.strokeStyle = css(hc === 0xe8e8e8 ? 0x8a8a8a : hc); g.lineCap = 'round'; g.lineWidth = 6;
     const browTilt = face === 2 || face === 4 ? 5 : face === 1 || face === 5 ? -3 : 0;
@@ -748,7 +776,13 @@ function faceTex(skin, face, beard, hc) {
 }
 const BLANK = new THREE.CanvasTexture(document.createElement('canvas'));
 const HM = new Map();
-const hairMat = c => { if (!HM.has(c)) HM.set(c, new THREE.MeshLambertMaterial({ color: c })); return HM.get(c); };
+const hairMat = c => { if (!HM.has(c)) HM.set(c, new THREE.MeshStandardMaterial({ color: c, roughness: 0.62, metalness: 0, envMapIntensity: 0.6 })); return HM.get(c); };
+// Microdetalle procedural: trama del tejido de la camiseta y poros/sudor de la piel (relieve y rugosidad)
+const WEAVE = ctex('weave', 512, 256, (g, w, h) => { g.fillStyle = '#808080'; g.fillRect(0, 0, w, h); for (let y = 0; y < h; y += 2) { g.fillStyle = y % 4 ? '#9a9a9a' : '#6a6a6a'; g.fillRect(0, y, w, 1); } for (let x = 0; x < w; x += 3) { g.fillStyle = 'rgba(0,0,0,.18)'; g.fillRect(x, 0, 1, h); } for (let i = 0; i < 2600; i++) { g.fillStyle = Math.random() < 0.5 ? 'rgba(255,255,255,.25)' : 'rgba(0,0,0,.25)'; g.fillRect(Math.random() * w, Math.random() * h, 2, 1); } });
+const PORES = ctex('pores', 512, 256, (g, w, h) => { g.fillStyle = '#7a7a7a'; g.fillRect(0, 0, w, h); for (let i = 0; i < 9000; i++) { const v = 90 + Math.random() * 80 | 0; g.fillStyle = `rgb(${v},${v},${v})`; g.fillRect(Math.random() * w, Math.random() * h, 1.4, 1.4); } });
+// rugosidad: piel algo mate con gotas de sudor brillantes (zonas oscuras = más brillo)
+const SWEAT = ctex('sweat', 512, 256, (g, w, h) => { g.fillStyle = '#9a9a9a'; g.fillRect(0, 0, w, h); const gr = g.createLinearGradient(0, 40, 0, 150); gr.addColorStop(0, 'rgba(40,40,40,.55)'); gr.addColorStop(1, 'rgba(40,40,40,0)'); g.fillStyle = gr; g.fillRect(w * 0.55, 40, w * 0.4, 110); for (let i = 0; i < 260; i++) { const x = w * (0.55 + Math.random() * 0.4), y = 50 + Math.random() * 150, r = 1 + Math.random() * 2.6; g.fillStyle = '#141414'; g.beginPath(); g.ellipse(x, y, r, r * 1.4, 0, 0, 7); g.fill(); } for (let i = 0; i < 4000; i++) { g.fillStyle = Math.random() < 0.5 ? '#b0b0b0' : '#7c7c7c'; g.fillRect(Math.random() * w, Math.random() * h, 1, 1); } });
+const EYE = ctex('eye', 128, 64, (g, w, h) => { g.fillStyle = '#f3efe8'; g.fillRect(0, 0, w, h); const x = w * 0.75, y = h * 0.5; const gr = g.createRadialGradient(x, y, 1, x, y, 11); gr.addColorStop(0, '#120a06'); gr.addColorStop(0.3, '#1a0f08'); gr.addColorStop(0.35, '#5b3a22'); gr.addColorStop(0.9, '#3a2414'); gr.addColorStop(1, '#1a1009'); g.fillStyle = gr; g.beginPath(); g.ellipse(x, y, 11, 13, 0, 0, 7); g.fill(); g.fillStyle = 'rgba(160,60,60,.18)'; g.fillRect(0, 0, w * 0.4, h); });
 const HEAD_R = 0.12;
 function buildHair(grp, style, color) {
   while (grp.children.length) { const c = grp.children.pop(); c.geometry.dispose(); }
@@ -768,8 +802,10 @@ function buildHair(grp, style, color) {
 }
 function makeFigure() {
   const g = new THREE.Group(), seg = 10;
-  const P = c => new THREE.MeshPhongMaterial({ color: c, shininess: 14, specular: 0x1c1c1c });
-  const mats = { jersey: new THREE.MeshPhongMaterial({ map: BLANK, shininess: 18, specular: 0x222222 }), sleeve: P(0xffffff), shorts: new THREE.MeshPhongMaterial({ map: BLANK, shininess: 18, specular: 0x222222 }), sock: new THREE.MeshPhongMaterial({ map: BLANK, shininess: 8 }), skin: P(0xe0b48a), boot: new THREE.MeshPhongMaterial({ color: 0x111111, shininess: 60, specular: 0x555555 }), head: new THREE.MeshPhongMaterial({ map: BLANK, shininess: 10, specular: 0x151515 }), glove: P(GLOVE) };
+  // Materiales físicos (PBR): tejido con trama, piel con poros y sudor, botas satinadas
+  const fabric = o => new THREE.MeshStandardMaterial(Object.assign({ map: BLANK, roughness: 0.78, metalness: 0, bumpMap: WEAVE, bumpScale: 0.0022, envMapIntensity: 0.7 }, o));
+  const skinM = o => new THREE.MeshStandardMaterial(Object.assign({ color: 0xe0b48a, roughness: 0.5, metalness: 0, roughnessMap: SWEAT, bumpMap: PORES, bumpScale: 0.0012, envMapIntensity: 0.9 }, o));
+  const mats = { jersey: fabric(), sleeve: fabric({ map: null, color: 0xffffff, bumpMap: null }), shorts: fabric(), sock: fabric({ roughness: 0.9, bumpMap: null }), skin: skinM(), boot: new THREE.MeshStandardMaterial({ color: 0x111111, roughness: 0.28, metalness: 0.15, envMapIntensity: 1.2 }), head: skinM({ map: BLANK, color: 0xffffff }), glove: fabric({ map: null, color: GLOVE, bumpMap: null, roughness: 0.6 }), eye: new THREE.MeshStandardMaterial({ map: EYE, roughness: 0.06, metalness: 0, envMapIntensity: 1.6 }) };
   const mesh = (geo, m, x = 0, y = 0, z = 0, par = g) => { const o = new THREE.Mesh(geo, m); o.position.set(x, y, z); o.castShadow = true; par.add(o); return o; };
   const cyl = (rt, rb, h) => new THREE.CylinderGeometry(rt, rb, h, seg);
   // tronco (pivota en la cadera)
@@ -780,6 +816,8 @@ function makeFigure() {
   mesh(cyl(0.05, 0.056, 0.09), mats.skin, 0, 0.67, 0, upper);
   const head = mesh(new THREE.SphereGeometry(HEAD_R, 22, 16), mats.head, 0, 0.82, 0, upper); head.scale.set(1, 1.13, 1.06);
   mesh(new THREE.BoxGeometry(0.03, 0.05, 0.035), mats.skin, 0, 0.81, -0.125, upper); // nariz
+  // ojos en 3D con córnea brillante (reflejan los focos del estadio)
+  for (const sx of [-1, 1]) { const e = mesh(new THREE.SphereGeometry(0.0155, 14, 10), mats.eye, sx * 0.033, 0.832, -0.111, upper); e.castShadow = false; }
   const hair = new THREE.Group(); hair.position.set(0, 0.82, 0); upper.add(hair);
   const arm = sx => {
     const pv = new THREE.Group(); pv.position.set(sx * 0.255, 0.58, 0); upper.add(pv);
@@ -811,7 +849,7 @@ function dressFigure(f, lk) {
   M.sleeve.color.setHex(k.sl ?? k.a);
   M.shorts.map = shortsTex(k); M.shorts.needsUpdate = true;
   M.sock.map = sockTex(k); M.sock.needsUpdate = true;
-  M.skin.color.setHex(lk.skin); M.boot.color.setHex(lk.boots);
+  M.skin.color.setHex(lk.skin); M.boot.color.setHex(lk.boots); M.sleeve.color.setHex(k.sl ?? k.a);
   M.head.map = faceTex(lk.skin, lk.face, lk.beard, lk.hairColor); M.head.needsUpdate = true;
   u.gloves.forEach(gl => gl.visible = !!lk.glove); [u.armL, u.armR].forEach(a => a.userData.hand.visible = !lk.glove);
   buildHair(u.hair, lk.hair, lk.hairColor);
@@ -1891,6 +1929,84 @@ function cerStep(dt) {
   camera.position.set(C0.x + Math.cos(ang) * r, h, C0.z + Math.sin(ang) * r);
   camLook.set(C0.x, lerp(2.6, K.kind === 'bdo' ? 1.2 : 0.7, e), C0.z); camera.lookAt(camLook);
 }
+/* =========================================================
+   RETRATO CINEMATOGRÁFICO 16:9: luz principal cálida, contraluces de color, haces volumétricos y polvo en suspensión
+   ========================================================= */
+const CINE = { on: false };
+const SHOTS = [
+  { n: 'Primer plano', d: 0.95, h: 1.78, ly: 1.72, a: 0.28 },
+  { n: 'Plano medio', d: 1.9, h: 1.55, ly: 1.4, a: -0.32 },
+  { n: 'Contrapicado', d: 3.3, h: 0.55, ly: 1.15, a: 0.5 },
+];
+function letterbox() {
+  document.querySelectorAll('.lbox').forEach(e => e.remove());
+  if (!CINE.on) return;
+  const W = innerWidth, H = innerHeight, vh = Math.min(H, W * 9 / 16), bar = (H - vh) / 2;
+  if (bar > 1) for (const pos of ['top', 'bottom']) { const d = document.createElement('div'); d.className = 'lbox'; d.style[pos] = '0'; d.style.height = bar + 'px'; document.body.appendChild(d); }
+  CINE.bar = bar;
+}
+function portrait() {
+  return new Promise(res => {
+    const C0 = new V3(0, 0, 30), rig = new THREE.Group(); scene.add(rig);
+    setPreview(null); FIGS.forEach(f => f.visible = false); keeperRoot.visible = false; ball.visible = false; shadow.visible = false;
+    dressFigure(player, { ...S.look, kit: kitFor(S.club), name: S.look.shirt, num: S.num }); resetLimbs(player);
+    player.visible = true; player.position.copy(C0); player.rotation.set(0, 0, 0);
+    const key = new THREE.SpotLight(0xffe0bd, 3.2, 14, 0.5, 0.55, 1.2); key.position.set(-1.6, 3.4, 26.6); key.target.position.set(0, 1.4, 30); key.castShadow = true; key.shadow.mapSize.set(1024, 1024);
+    const rimB = new THREE.DirectionalLight(0x5aa8ff, 2.4); rimB.position.set(2.4, 2.6, 33.5); rimB.target.position.copy(C0);
+    const rimO = new THREE.DirectionalLight(0xff9a4a, 1.9); rimO.position.set(-2.6, 2.2, 33.2); rimO.target.position.copy(C0);
+    const fill = new THREE.PointLight(0x9fb8ff, 0.35, 8); fill.position.set(1.5, 1.2, 27.5);
+    rig.add(key, key.target, rimB, rimB.target, rimO, rimO.target, fill);
+    // haces de luz volumétricos desde los focos del fondo
+    const shafts = [-1, 0, 1].map((i, k) => { const m = new THREE.Mesh(new THREE.ConeGeometry(1.6 + k * 0.4, 18, 24, 1, true), new THREE.MeshBasicMaterial({ color: k === 1 ? 0xffe6c4 : 0x9cc4ff, transparent: true, opacity: 0.035, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide })); m.position.set(i * 3.5, 9, 37); m.rotation.x = -0.55; m.rotation.z = -i * 0.25; rig.add(m); return m; });
+    // polvo en suspensión iluminado
+    const N = 500, geo = new THREE.BufferGeometry(), P = new Float32Array(N * 3);
+    for (let i = 0; i < N; i++) P.set([rand(-3, 3), rand(0.2, 3.4), C0.z + rand(-2.5, 3)], i * 3);
+    geo.setAttribute('position', new THREE.BufferAttribute(P, 3));
+    const dust = new THREE.Points(geo, new THREE.PointsMaterial({ color: 0xffe9cc, map: glowTex, size: 0.035, transparent: true, opacity: 0.55, blending: THREE.AdditiveBlending, depthWrite: false })); rig.add(dust);
+    const saved = { hemi: hemiL.intensity, amb: ambL.intensity, sun: sun.intensity, fill: fillL.intensity, rim: rimL.intensity, fog: [scene.fog.near, scene.fog.far], exp: renderer.toneMappingExposure };
+    hemiL.intensity = 0.06; ambL.intensity = 0.02; sun.intensity = 0.08; fillL.intensity = 0.03; rimL.intensity = 0.06; scene.fog.near = 6; scene.fog.far = 40; renderer.toneMappingExposure = 1.2; pitch.material.color.setHex(0x6f7f6f);
+    Object.assign(CINE, { on: true, t: 0, shot: 1, rig, shafts, dust, saved, C0 });
+    ui.classList.remove('hidden', 'split', 'cer'); ui.classList.add('cine'); hud.classList.add('hidden');
+    ui.innerHTML = `<div class="card"><div class="cineT"><small>${flagOf(S.nation)} ${esc(S.club)} · ${seasonLabel()}</small>${esc(S.name)} <span style="color:var(--gold)">${S.ovr}</span></div>
+      <div class="cineB"><button class="hbtn" id="cnShot">🎥 Otro plano</button><button class="hbtn" id="cnSave">💾 Guardar imagen</button><button class="hbtn" id="cnBack">↩ Volver</button></div></div>`;
+    letterbox(); ui.style.paddingBottom = (CINE.bar + 18) + 'px';
+    $('#cnShot').onclick = () => { sfx.click(); CINE.shot = (CINE.shot + 1) % SHOTS.length; CINE.t = 0; };
+    $('#cnSave').onclick = () => { sfx.click(); saveShot(); };
+    $('#cnBack').onclick = () => {
+      sfx.click(); CINE.on = false; letterbox(); ui.classList.remove('cine'); ui.style.paddingBottom = '';
+      scene.remove(rig); rig.traverse(o => { if (o.geometry) o.geometry.dispose(); });
+      hemiL.intensity = saved.hemi; ambL.intensity = saved.amb; sun.intensity = saved.sun; fillL.intensity = saved.fill; rimL.intensity = saved.rim; [scene.fog.near, scene.fog.far] = saved.fog; renderer.toneMappingExposure = saved.exp;
+      pitch.material.color.setHex(0xffffff); resetLimbs(player); keeperRoot.visible = true; ball.visible = true; shadow.visible = true; res();
+    };
+  });
+}
+window.addEventListener('resize', () => { if (CINE.on) { letterbox(); ui.style.paddingBottom = (CINE.bar + 18) + 'px'; } });
+function saveShot() {
+  renderer.render(scene, camera);
+  const W = canvas.width, H = canvas.height, vh = Math.min(H, Math.round(W * 9 / 16)), y0 = Math.round((H - vh) / 2);
+  const out = document.createElement('canvas'); out.width = W; out.height = vh; const g = out.getContext('2d');
+  g.drawImage(canvas, 0, y0, W, vh, 0, 0, W, vh);
+  g.font = `${Math.round(vh * 0.06)}px "Bebas Neue", Impact, sans-serif`; g.fillStyle = '#fff'; g.shadowColor = 'rgba(0,0,0,.8)'; g.shadowBlur = 18;
+  g.fillText(`${S.name.toUpperCase()} · ${S.ovr}`, vh * 0.05, vh * 0.93);
+  const a = document.createElement('a'); a.download = `${shirtName(S.name).toLowerCase()}-retrato.png`; a.href = out.toDataURL('image/png'); a.click();
+}
+function cineStep(dt) {
+  const K = CINE, sh = SHOTS[K.shot], u = player.userData, t = (K.t += dt), C0 = K.C0;
+  // pose de héroe: pecho fuera, brazos relajados, respiración y mirada a cámara
+  u.manual = true; const br = Math.sin(t * 1.6);
+  u.upper.rotation.set(0.04 + br * 0.012, 0, 0); u.armL.rotation.set(0.08, 0, -0.16 - br * 0.02); u.armR.rotation.set(0.12, 0, 0.2 + br * 0.02);
+  u.legL.rotation.set(0.02, 0, -0.05); u.legR.rotation.set(-0.04, 0, 0.07); u.kneeR.rotation.x = -0.08;
+  player.position.y = br * 0.004;
+  K.shafts.forEach((m, i) => m.material.opacity = 0.03 + Math.sin(t * 0.9 + i * 2) * 0.01);
+  const P = K.dust.geometry.attributes.position.array;
+  for (let i = 0; i < P.length; i += 3) { P[i] += Math.sin(t * 0.3 + i) * 0.0015; P[i + 1] += 0.0025 + Math.cos(t * 0.5 + i) * 0.0008; if (P[i + 1] > 3.6) P[i + 1] = 0.2; }
+  K.dust.geometry.attributes.position.needsUpdate = true;
+  // cámara: lento travelling alrededor del jugador
+  const e = ease(clamp(t / 2.5, 0, 1)), ang = sh.a + Math.sin(t * 0.18) * 0.22, d = lerp(sh.d * 1.35, sh.d, e);
+  camera.position.set(C0.x + Math.sin(ang) * d, sh.h + Math.sin(t * 0.25) * 0.03, C0.z - Math.cos(ang) * d);
+  camLook.set(C0.x, sh.ly, C0.z); camera.lookAt(camLook);
+  faceTo(player, new V3(camera.position.x * 0.6, 0, camera.position.z));
+}
 let lastT = performance.now(), clock = 0;
 function idleCam() {
   const t = clock * 0.06;
@@ -1900,7 +2016,7 @@ function idleCam() {
 function frame(now) {
   const dt = Math.min(0.05, (now - lastT) / 1000); lastT = now; clock += dt;
   ledTex.offset.x = (ledTex.offset.x + dt * 0.035) % 1;
-  if (M.on) updateMoment(dt); else if (CER.on) cerStep(dt); else if (PREVIEW) previewCam(dt); else idleCam();
+  if (M.on) updateMoment(dt); else if (CINE.on) cineStep(dt); else if (CER.on) cerStep(dt); else if (PREVIEW) previewCam(dt); else idleCam();
   renderer.render(scene, camera);
   requestAnimationFrame(frame);
 }
@@ -2666,6 +2782,7 @@ function hub() {
       <div class="opts">
         <button class="opt primary" id="go"><b>▶ Jugar temporada ${seasonLabel()}</b><small>${S.mode === 'wc' ? 'Temporada de club simulada' + (tours.includes('Mundial') ? ' · ¡y luego el MUNDIAL!' : '') : 'Liga por jornadas con 7-10 partidos jugables, Champions, finales' + (tours.includes('Mundial') ? ' · ¡y el MUNDIAL!' : '')}</small></button>
         ${S.age >= 33 ? '<button class="opt" id="ret"><b>Retirarme</b><small>Colgar las botas y ver tu legado</small></button>' : ''}
+        <button class="opt" id="photo"><b>📸 Retrato cinematográfico</b><small>Tu jugador en primer plano con luz de estadio · guarda la imagen</small></button>
         <button class="opt ghost" id="menu"><b>Guardar y volver al menú</b></button>
       </div>`, true);
     setPreview(S.look, kitFor(S.club), S.num);
@@ -2673,6 +2790,7 @@ function hub() {
     $('#go').onclick = () => { sfx.init(); sfx.click(); res('go'); };
     if ($('#ret')) $('#ret').onclick = () => res('retire');
     $('#menu').onclick = () => res('menu');
+    $('#photo').onclick = () => { sfx.init(); sfx.click(); res('photo'); };
   });
 }
 async function careerLoop() {
@@ -2681,6 +2799,7 @@ async function careerLoop() {
     const act = await hub();
     if (act === 'menu') return mainMenu();
     if (act === 'retire') return careerEnd();
+    if (act === 'photo') { await portrait(); continue; }
     S.cur = { apps: 0, g: 0, a: 0, ncaps: 0, ng: 0, na: 0, titles: [], log: [], finalG: 0, lg: 0, bonus: S.nextBonus || 0, inj: 0, extra: 0 };
     S.nextBonus = 0;
     await seasonEvents();
