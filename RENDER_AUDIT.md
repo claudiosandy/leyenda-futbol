@@ -265,3 +265,47 @@ Con el LOD bajan los draw calls; los triángulos suben por el pelo y el torso to
 El posproceso añade unas 18 llamadas de pantalla completa. El coste real está en el *fill rate* (MSAA en HalfFloat, GTAO y mips del bloom): se mide con GPU y `?stats=1`, no aquí.
 
 **Pendiente:** el *depth fade* exacto de los conos volumétricos contra la escena necesitaría una prepasada de profundidad. Por ahora mantienen el fundido por altura, sin artefactos visibles.
+
+---
+
+# Fase 6 — Presets de calidad y rendimiento (hecha)
+
+| Preset | Pixel ratio máx. | Sombras | LOD | Público | Posproceso |
+|---|---|---|---|---|---|
+| Bajo | 1 | 1024 | 18 m | 25 % | ninguno (antialias del canvas) |
+| Medio | 1,25 | 2048 | 22 m | 50 % | SMAA + bloom |
+| Alto | 1,5 | 2048 | 26 m | 80 % | MSAA ×4 + GTAO (½ res.) + bloom |
+| Ultra | 2 | 4096 | 34 m | 100 % | MSAA ×4 + GTAO + bloom |
+
+El pixel ratio nunca supera el del dispositivo (`min(dpr, pr)`) y el radio de la sombra PCF escala con el mapa.
+
+- **Selector:** menú principal → ⚙️ Gráficos. Cambiar el preset recarga el juego, porque el antialias del canvas y la cadena de render se crean al arrancar; la partida guardada no se toca. El tono de color (Neutral, AgX, ACES) cambia en vivo. Se guarda en `localStorage` (`ley_preset`, `ley_render`).
+- **Autodetección** (`detectPreset()`, solo si no hay preferencia guardada): usa la GPU (`WEBGL_debug_renderer_info`), la memoria, los núcleos y el tipo de puntero.
+  - Software (SwiftShader, llvmpipe): Bajo.
+  - Móvil: Bajo, o Medio en GPUs de gama alta.
+  - Intel integrada: Medio; Iris Xe o Arc: Alto.
+  - NVIDIA, AMD o Apple M: Alto; RTX 30/40/50, RX 6000/7000 o M Pro/Max: Ultra.
+  - Con menos de 4 GB o 2 núcleos baja un nivel.
+  - En este entorno detecta SwiftShader y elige Bajo, como debe ser.
+- **Reducción de draw calls:** el LOD de los muñecos también recorta la pasada de sombras. De lejos solo proyectan sombra el torso, la cabeza, el pantalón y las medias, y se ocultan los deltoides. En una jugada real del plano general (High), **605 → 384 draw calls** (−37 %): las piezas con sombra pasan de 246 a 78.
+- Las capturas usan `?preset=high` explícito (la autodetección daría Bajo en SwiftShader). Con otro preset se añade además el retrato en High.
+
+## renderer.info: antes (fase 0) y después (fase 6)
+
+High, 1280×720, todas las pasadas del fotograma (sombras y posproceso incluidos). **Medido con SwiftShader: los fps de este entorno no son representativos. Hay que medirlos con GPU y `?stats=1`.**
+
+| Plano | Antes: calls / triángulos | Después: calls / triángulos |
+|---|---|---|
+| Retrato | 120 / 7 812 | 169 / 114 456 |
+| Cuerpo frontal | 130 / 8 032 | 131 / 60 862 |
+| Espalda (dorsal) | 131 / 8 434 | 131 / 60 876 |
+| Plano general | 868 / 68 572 | **404** / 98 964 |
+
+- **Retrato:** el Bokeh dibuja la profundidad de la escena otra vez, solo en este modo.
+- **Triángulos:** suben por el público instanciado (unos 26 000 en una llamada), el pelo en tarjetas y el torso torneado.
+- **Plano general:** la mitad de llamadas que antes, con estadio, público y posproceso completos.
+
+**Siguiente paso de rendimiento**, si con GPU High no llega a 60 fps:
+- Usar un GLB con una sola malla por jugador (`ASSETS.md`). La autoprueba lo deja en 214 llamadas.
+- Fusionar la estructura estática del estadio (`BufferGeometryUtils.mergeGeometries`).
+- Bajar el `aoScale`.

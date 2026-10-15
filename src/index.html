@@ -544,17 +544,51 @@ const RENDER = (() => {
   return c;
 })();
 const TONEMAPS = { neutral: THREE.NeutralToneMapping, agx: THREE.AgXToneMapping, aces: THREE.ACESFilmicToneMapping, none: THREE.NoToneMapping };
-/* ---------- Calidad gráfica (presets; la interfaz y la autodetección completas llegan en la fase 6) ----------
-   post: cadena de posproceso (sin ella, render directo con el antialias del canvas) · msaa: muestras del render target
-   (0 → SMAA) · ao: GTAO (aoScale: resolución relativa del AO) · bloom: intensidad del bloom (0 = desactivado) */
+/* ---------- Calidad gráfica: presets Low / Medium / High / Ultra ----------
+   pr: pixel ratio máximo (nunca más que el del dispositivo) · shadow: tamaño del mapa de sombras · lod: distancia (m)
+   a partir de la que los muñecos pierden detalles · crowd: densidad de público · post: cadena de posproceso (sin
+   ella, render directo con el antialias del canvas) · msaa: muestras del render target (0 → SMAA) · ao: GTAO
+   (aoScale: resolución relativa del AO) · bloom: intensidad del bloom (0 = desactivado).
+   Se elige en el menú (⚙️ Gráficos) y se guarda en localStorage 'ley_preset'; la primera vez se autodetecta. */
 const PRESETS = {
-  low: { crowd: 0.25, post: false, msaa: 0, ao: false, bloom: 0 },
-  medium: { crowd: 0.5, post: true, msaa: 0, ao: false, bloom: 0.15 },
-  high: { crowd: 0.8, post: true, msaa: 4, ao: true, aoScale: 0.5, bloom: 0.18 },
-  ultra: { crowd: 1, post: true, msaa: 4, ao: true, aoScale: 1, bloom: 0.2 },
+  low: { label: 'Bajo', pr: 1, shadow: 1024, lod: 18, crowd: 0.25, post: false, msaa: 0, ao: false, bloom: 0 },
+  medium: { label: 'Medio', pr: 1.25, shadow: 2048, lod: 22, crowd: 0.5, post: true, msaa: 0, ao: false, bloom: 0.15 },
+  high: { label: 'Alto', pr: 1.5, shadow: 2048, lod: 26, crowd: 0.8, post: true, msaa: 4, ao: true, aoScale: 0.5, bloom: 0.18 },
+  ultra: { label: 'Ultra', pr: 2, shadow: 4096, lod: 34, crowd: 1, post: true, msaa: 4, ao: true, aoScale: 1, bloom: 0.2 },
 };
-const PRESET_NAME = (() => { let p = QS.get('preset'); try { p = p || localStorage.getItem('ley_preset'); } catch (e) { } return PRESETS[p] ? p : 'high'; })();
+// Autodetección (solo si no hay preferencia guardada): GPU por WEBGL_debug_renderer_info, memoria, núcleos y tipo de pantalla.
+// Es una estimación prudente; el jugador puede cambiarla y se recuerda.
+function detectPreset() {
+  let gpu = '';
+  try {
+    const gl = document.createElement('canvas').getContext('webgl2');
+    if (!gl) return { preset: 'low', gpu: 'sin WebGL2' };
+    const ext = gl.getExtension('WEBGL_debug_renderer_info');
+    gpu = String(ext ? gl.getParameter(ext.UNMASKED_RENDERER_WEBGL) : gl.getParameter(gl.RENDERER));
+    const lose = gl.getExtension('WEBGL_lose_context'); if (lose) lose.loseContext();
+  } catch (e) { return { preset: 'medium', gpu: '?' }; }
+  const g = gpu.toLowerCase(), mem = navigator.deviceMemory || 8, cores = navigator.hardwareConcurrency || 4;
+  const mobile = matchMedia('(pointer: coarse)').matches || /android|iphone|ipad|mobile/i.test(navigator.userAgent);
+  let preset;
+  if (/swiftshader|llvmpipe|software|basic render|mesa offscreen/.test(g)) preset = 'low';
+  else if (mobile) preset = /apple gpu|adreno \(tm\) 7|adreno 7|mali-g7[1-9]|immortalis/.test(g) && mem >= 6 ? 'medium' : 'low';
+  else if (/rtx [34]0|rtx 50|rx [67]\d{3}|radeon pro w7|apple m[2-9] (pro|max|ultra)/.test(g)) preset = 'ultra';
+  else if (/nvidia|geforce|rtx|gtx|radeon|amd|apple m\d/.test(g)) preset = 'high';
+  else if (/intel|iris|uhd|arc/.test(g)) preset = /arc|iris xe/.test(g) ? 'high' : 'medium';
+  else preset = 'medium';
+  if (mem < 4 || cores <= 2) preset = preset === 'ultra' || preset === 'high' ? 'medium' : 'low';
+  return { preset, gpu };
+}
+const PRESET_INFO = (() => {
+  let p = QS.get('preset'), src = 'url';
+  if (!PRESETS[p]) { src = 'guardado'; try { p = localStorage.getItem('ley_preset'); } catch (e) { p = null; } }
+  if (!PRESETS[p]) { const d = detectPreset(); p = d.preset; src = 'auto (' + d.gpu + ')'; }
+  return { name: p, src };
+})();
+const PRESET_NAME = PRESET_INFO.name;
 const QUALITY = PRESETS[PRESET_NAME];
+function setPreset(p) { try { localStorage.setItem('ley_preset', p); } catch (e) { } const u = new URL(location.href); u.searchParams.delete('preset'); location.href = u.toString(); }
+console.info(`[render] calidad ${PRESET_NAME} (${PRESET_INFO.src})`);
 // Las luces son físicas desde r165: las intensidades antiguas (unidades heredadas) se multiplican por π
 const LU = Math.PI;
 // Focos y luces puntuales: convierte una intensidad heredada medida a la distancia de referencia a candelas (decay físico = 2)
@@ -563,7 +597,7 @@ const srgbTex = t => { t.colorSpace = THREE.SRGBColorSpace; return t; };
 const canvas = $('#c');
 // Con posproceso el antialias lo hace el render target (MSAA) o SMAA: el del canvas solo gastaría memoria
 const renderer = new THREE.WebGLRenderer({ canvas, antialias: !QUALITY.post, powerPreference: 'high-performance' });
-renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, QUALITY.pr));
 renderer.shadowMap.enabled = true;
 renderer.shadowMap.type = THREE.PCFShadowMap; // en r182+ PCF ya filtra suave; la penumbra se regula con shadow.radius
 renderer.outputColorSpace = THREE.SRGBColorSpace;
@@ -671,9 +705,9 @@ scene.environment = ENV; scene.environmentIntensity = 0.9;
 // Luz dominante: torre delantera derecha (ilumina el pecho de quien ataca la portería y proyecta sombras hacia la cámara)
 const sun = new THREE.DirectionalLight(0xfff3e2, 1.05 * LU);
 sun.position.set(44, TOWER_Y, -14); sun.target.position.set(0, 0, 20); scene.add(sun, sun.target);
-sun.castShadow = true; sun.shadow.mapSize.set(2048, 2048);
+sun.castShadow = true; sun.shadow.mapSize.set(QUALITY.shadow, QUALITY.shadow);
 // frustum ajustado al campo visto desde la torre (campo: x ±37, z -10…60)
-Object.assign(sun.shadow.camera, { left: -48, right: 48, top: 40, bottom: -40, near: 20, far: 140 }); sun.shadow.bias = -0.0003; sun.shadow.normalBias = 0.035; sun.shadow.radius = 3;
+Object.assign(sun.shadow.camera, { left: -48, right: 48, top: 40, bottom: -40, near: 20, far: 140 }); sun.shadow.bias = -0.0003; sun.shadow.normalBias = 0.035; sun.shadow.radius = 3 * QUALITY.shadow / 2048;
 const fillL = new THREE.DirectionalLight(0xe8efff, 0.36 * LU); fillL.position.set(-44, TOWER_Y, -14); fillL.target.position.set(0, 0, 20); scene.add(fillL, fillL.target);
 const rimL = new THREE.DirectionalLight(0xfff0dc, 0.34 * LU); rimL.position.set(44, TOWER_Y, 62); rimL.target.position.set(0, 0, 20); scene.add(rimL, rimL.target);
 const backL = new THREE.DirectionalLight(0xe8efff, 0.3 * LU); backL.position.set(-44, TOWER_Y, 62); backL.target.position.set(0, 0, 20); scene.add(backL, backL.target);
@@ -1167,17 +1201,29 @@ function dressFigure(f, lk) {
   M.head.map = faceTex(lk.skin, lk.face, lk.beard, lk.hairColor); M.head.needsUpdate = true;
   u.gloves.forEach(gl => gl.visible = !!lk.glove && !u.model); [u.armL, u.armR].forEach(a => a.userData.hand.visible = !lk.glove && !u.model && !u.far);
   buildHair(u.hair, lk.hair, lk.hairColor);
+  u.far = undefined; // el pelo nuevo nace con sombra: que el LOD lo vuelva a evaluar
   if (u.model) PV.dress(f);
   u.look = lk;
 }
-// LOD del muñeco: lejos de la cámara se ocultan los detalles pequeños (ojos, nariz, manos, rodillas, punteras)
-const LOD_FAR2 = 26 * 26;
+// LOD del muñeco: lejos de la cámara se ocultan los detalles pequeños (ojos, nariz, manos, rodillas, punteras y deltoides)
+// y solo proyectan sombra las piezas grandes (torso, cabeza, pantalón y medias): a esa distancia la sombra de
+// brazos, cuello, pelo y botas no se distingue y cada pieza es un draw call más en la pasada de sombras.
+// La distancia depende del preset (QUALITY.lod).
+const LOD_FAR2 = QUALITY.lod * QUALITY.lod;
+const LOD_CAST = ['jersey', 'head', 'shorts', 'sock'];
 function updateLOD(f) {
   const u = f.userData; if (!u.detail || u.model) return;
   const far = camera.position.distanceToSquared(f.getWorldPosition(_lodV)) > LOD_FAR2;
   if (far === u.far) return; u.far = far;
   const hands = [u.armL.userData.hand, u.armR.userData.hand], gloved = !!(u.look && u.look.glove);
   for (const m of u.detail) m.visible = !far && !(hands.includes(m) && gloved);
+  const keep = LOD_CAST.map(k => u.mats[k]);
+  for (const m of u.doll) {
+    if (m.userData.cast0 === undefined) m.userData.cast0 = m.castShadow;
+    m.castShadow = m.userData.cast0 && (!far || keep.includes(m.material));
+    if (m.material === u.mats.sleeve && m.geometry.type === 'SphereGeometry') m.visible = !far;
+  }
+  u.hair.traverse(o => { if (o.isMesh) o.castShadow = !far; });
 }
 const _lodV = new V3();
 /* =========================================================
@@ -3452,6 +3498,7 @@ async function mainMenu() {
       <button class="opt" data-p="modric"><div class="num">10</div><b>Luka Modrić</b><small>Centrocampista · 🇭🇷 Croacia<br>Empieza en 2003 · Dinamo Zagreb</small></button>
       <button class="opt" data-p="cr7"><div class="num">7</div><b>Cristiano Ronaldo</b><small>Delantero · 🇵🇹 Portugal<br>Empieza en 2002 · Sporting CP</small></button>
     </div>
+    <p style="margin-top:14px"><button class="hbtn" data-p="graficos">⚙️ Gráficos · ${QUALITY.label}</button></p>
     <p class="muted" style="font-size:13px;margin-top:16px">Controles: apunta con el ratón (en móvil, arrastra el dedo) · mantén pulsado para cargar · suelta en la zona verde · A/D o ◀ ▶ para dar efecto · C o el botón de cámara para cambiar la vista.</p>`, opts);
   if (v === 'cont') { S = sv; return careerLoop(); }
 }
@@ -3460,6 +3507,7 @@ ui.addEventListener('click', e => {
   sfx.init(); sfx.click();
   const p = b.dataset.p;
   if (p === 'create') return creator();
+  if (p === 'graficos') return graphicsMenu();
   const tpl = LEGENDS[p];
   screen(`<div class="kicker">Nueva carrera</div><h2>${tpl.name}</h2>
     <p>Empiezas en <b>${tpl.club}</b> en la temporada ${seasonLabel(tpl.year)}, con ${tpl.age} años y media ${tpl.ovr}.</p>
@@ -3470,6 +3518,32 @@ ui.addEventListener('click', e => {
   $('#lBack').onclick = () => mainMenu();
   $('#lGo').onclick = () => { sfx.click(); newCareer(tpl, 'carrera'); S.legend = p; careerLoop(); };
 });
+
+// Ajustes gráficos: preset (recarga el juego; la carrera guardada no se toca) y tone mapping (en vivo)
+function graphicsMenu() {
+  const det = detectPreset(), TXT = {
+    low: 'Sin posproceso · sombras 1024 · menos público. Para móviles y equipos modestos.',
+    medium: 'SMAA y bloom · sombras 2048 · público medio. Portátiles con gráfica integrada.',
+    high: 'MSAA ×4, oclusión ambiental (GTAO) y bloom · sombras 2048. Objetivo: 60 fps en un portátil medio.',
+    ultra: 'Oclusión ambiental a resolución completa · sombras 4096 · estadio lleno · nitidez ×2.',
+  };
+  const TM = { neutral: 'Neutral (fiel al color)', agx: 'AgX (película)', aces: 'ACES (contraste)' };
+  screen(`<div class="kicker">Ajustes</div><h2>Gráficos</h2>
+    <p>Calidad actual: <b>${QUALITY.label}</b> <span class="muted">(${esc(PRESET_INFO.src)})</span></p>
+    <div class="opts">${Object.entries(PRESETS).map(([k, q]) => `<button class="opt${k === PRESET_NAME ? ' primary' : ''}" data-q="${k}"><b>${q.label}${k === det.preset ? ' · recomendado' : ''}</b><small>${TXT[k]}</small></button>`).join('')}
+      <button class="opt" data-q="auto"><b>Automático</b><small>Detecta tu equipo: ${PRESETS[det.preset].label}</small></button></div>
+    <p style="margin-top:18px"><b>Tono de color</b></p>
+    <div class="opts">${Object.entries(TM).map(([k, t]) => `<button class="opt${k === RENDER.tm ? ' primary' : ''}" data-tm="${k}"><b>${t}</b></button>`).join('')}</div>
+    <p class="muted" style="font-size:13px">Cambiar la calidad recarga el juego; tu carrera guardada no se pierde. Añade <b>?stats=1</b> a la dirección para ver los fps.</p>
+    <div class="opts"><button class="opt" id="gBack"><b>Volver</b></button></div>`);
+  ui.querySelectorAll('[data-q]').forEach(b => b.onclick = () => {
+    sfx.click(); const q = b.dataset.q;
+    if (q === 'auto') { try { localStorage.removeItem('ley_preset'); } catch (e) { } const u = new URL(location.href); u.searchParams.delete('preset'); location.href = u.toString(); }
+    else if (q !== PRESET_NAME) setPreset(q);
+  });
+  ui.querySelectorAll('[data-tm]').forEach(b => b.onclick = () => { sfx.click(); setRender({ tm: b.dataset.tm }); graphicsMenu(); });
+  $('#gBack').onclick = () => { sfx.click(); mainMenu(); };
+}
 
 if (!DBG) mainMenu();
 </script>

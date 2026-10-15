@@ -1,21 +1,14 @@
 {
+  "preset": "high",
   "retrato_primer_plano": {
     "drawCalls": 169,
     "triangulos": 114456,
     "texturas": 54,
-    "geometrias": 111,
+    "geometrias": 110,
     "programas": 55,
     "errores": []
   },
   "cuerpo_frontal": {
-    "drawCalls": 131,
-    "triangulos": 60764,
-    "texturas": 52,
-    "geometrias": 106,
-    "programas": 37,
-    "errores": []
-  },
-  "espalda_dorsal": {
     "drawCalls": 131,
     "triangulos": 60862,
     "texturas": 52,
@@ -23,11 +16,19 @@
     "programas": 37,
     "errores": []
   },
+  "espalda_dorsal": {
+    "drawCalls": 131,
+    "triangulos": 60876,
+    "texturas": 52,
+    "geometrias": 106,
+    "programas": 37,
+    "errores": []
+  },
   "plano_general": {
-    "drawCalls": 736,
-    "triangulos": 129678,
+    "drawCalls": 404,
+    "triangulos": 98964,
     "texturas": 78,
-    "geometrias": 395,
+    "geometrias": 287,
     "programas": 39,
     "errores": []
   },
@@ -250,8 +251,8 @@
     }
   ],
   "cuerpo_frontal_glb_sintetico": {
-    "drawCalls": 72,
-    "triangulos": 57716,
+    "drawCalls": 71,
+    "triangulos": 56624,
     "glb": {
       "bytes": 72912,
       "clips": [
@@ -273,8 +274,8 @@
     }
   },
   "plano_general_glb_sintetico": {
-    "drawCalls": 203,
-    "triangulos": 96166,
+    "drawCalls": 214,
+    "triangulos": 98588,
     "glb": {
       "bytes": 72912,
       "clips": [

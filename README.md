@@ -1,6 +1,6 @@
 # ⚽ LEYENDA: Modo Carrera
 
-Videojuego de fútbol en 3D para el navegador, con personajes de estilo bloques.
+Videojuego de fútbol en 3D para el navegador, con render PBR (Three.js r186) y posproceso.
 Crea tu jugador (o juega con Modrić o Cristiano Ronaldo) y vive su carrera: tus decisiones
 y tus disparos interactivos cambian tus goles, asistencias, títulos y Balones de Oro.
 
@@ -40,8 +40,12 @@ y tus disparos interactivos cambian tus goles, asistencias, títulos y Balones d
   incrusta Three.js (npm, versión fijada en `package.json`) para que funcione en GitHub Pages y con doble clic sin internet.
 - `npm ci` instala las dependencias; `npm run check` comprueba que `index.html` está al día y que no hay errores de sintaxis.
 - `npm run capturas -- after` genera las capturas de verificación del render en `docs/render/after/`.
+- **Calidad gráfica:** menú principal → ⚙️ Gráficos (Bajo, Medio, Alto, Ultra o Automático). La primera vez se autodetecta.
+  También vale `?preset=low|medium|high|ultra`.
 - Parámetros de diagnóstico: `?stats=1` (fps y `renderer.info`), `?debug=color` (muestras de color de los kits),
-  `?tonemap=neutral|agx|aces|none` y `?exposure=1.0`.
+  `?tonemap=neutral|agx|aces|none`, `?exposure=1.0` y `?selftest=glb` (prueba del pipeline de modelos GLB).
+- Assets opcionales (HDRI, texturas, futbolista GLB): ver `ASSETS.md`. Para que carguen, sirve la carpeta por http
+  (`python3 -m http.server`); con doble clic se usa la versión procedural. Detalles técnicos del render en `RENDER_AUDIT.md`.
 - Cada cambio en `main` pasa por GitHub Actions (`npm ci` + `npm run check`) antes de publicarse en GitHub Pages.
 
 > Juego de fans sin fines comerciales. Los nombres de jugadores, clubes y competiciones pertenecen a sus respectivos dueños.
