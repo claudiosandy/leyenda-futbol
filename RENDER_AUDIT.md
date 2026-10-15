@@ -183,3 +183,15 @@ En las capturas (mismos planos):
 | Plano general | 868 / 68 572 | 934 / 72 882 |
 
 El plano general sube por la cámara de sombras de r186, que procesa más objetos en el frustum. El problema de draw calls se ataca en la fase 6.
+
+---
+
+# Fase 2 — Iluminación de estadio e IBL (hecha)
+
+- **Torres de focos:** cuatro torres en las esquinas (`TOWERS`). La delantera derecha es la **luz dominante** con sombras: PCF con `radius = 3`, mapa de 2048 y frustum ajustado al campo (96×80 m vistos desde la torre), `bias = -0.0003` y `normalBias = 0.035`. En las capturas de cerca no hay acné ni peter-panning. Las otras tres iluminan sin sombras, así que el jugador nunca queda totalmente a contraluz. Intensidades físicas: dominante 1.05π; las demás 0.30-0.36π; hemisférica 0.16π; ambiente 0.
+- **IBL procedural permanente:** cielo con gradiente y resplandor en el horizonte, grada oscura, césped y **cuatro paneles HDR** (×24) en la posición real de los focos, pasados por `PMREMGenerator.fromScene`. `scene.environmentIntensity = 0.9`. HDRI de Poly Haven: **dominio bloqueado**; queda como opción de calidad alta en el manifest (fase 4).
+- **Sombras de contacto:** cada figura lleva una textura radial suave bajo los pies, que se queda pegada al suelo al saltar y encoge con la altura. El balón usa la misma.
+- **Conos volumétricos:** `volumeMaterial()`, un ShaderMaterial con fresnel (los bordes se desvanecen), degradado a lo largo del haz y fundido al acercarse al suelo. Usa valores HDR y pasa por tone mapping. Lo usan el retrato y las ceremonias. *Depth fade* exacto contra la escena: pendiente de la textura de profundidad de la fase 5.
+- **Polvo:** de 500 a 220 *sprites* redondos con atenuación por tamaño, niebla y opacidad 0.35.
+
+Pendiente de la fase 3: el césped y la grada siguen siendo texturas de canvas saturadas o ruidosas (césped `#1b9c30`).
