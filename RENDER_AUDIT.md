@@ -236,3 +236,32 @@ Con el LOD bajan los draw calls; los triángulos suben por el pelo y el torso to
 - Los rigs reales pueden tener ejes de hueso distintos, y el adaptador puede girar al revés: se corrige con `ejeX` y `huesos` en el manifest.
 - Con `file://` no se cargan texturas ni GLB externos: solo se usa lo procedural.
 - Las texturas KTX2 sueltas (fuera del GLB) aún no se leen.
+
+---
+
+# Fase 5 — Posproceso (hecha)
+
+**Cadena** (`POST` y `renderFrame()` en `src/index.html`):
+
+`RenderPass` (HalfFloat, MSAA ×4 en WebGL2) → `GTAOPass` → `BokehPass` (solo retrato) → `UnrealBloomPass` → viñeta (solo retrato) → `SMAAPass` (solo sin MSAA) → `OutputPass`
+
+- **Un solo punto de tone mapping.** Al dibujar en un render target, three no aplica tone mapping: la escena llega lineal y en HDR, y solo el `OutputPass` aplica `renderer.toneMapping`, la exposición y la conversión a sRGB. Comprobado por píxel: el kit sale igual con posproceso (High) que en render directo (Low). Camiseta `#911438` frente a `#901338`; césped `#2f5d1f` frente a `#305d1d`.
+- **Interfaz 3D sin tone mapping:** la retícula y el cursor del jugador están en `UI_LAYER` y se dibujan después del `OutputPass` con `toneMapped:false`. Salen nítidos y con su color exacto, sin bloom ni AO. Los anillos del suelo siguen en la escena, porque necesitan la profundidad para quedar detrás de los pies.
+- **GTAO:** usa la profundidad del propio RenderPass y reconstruye las normales a partir de ella, sin segunda pasada de geometría. En High trabaja a media resolución (`aoScale` 0.5) y en Ultra a resolución completa. *Bug de r186:* pasar `depthTexture` en el constructor falla porque `setGBuffer` lee `normalRenderTarget` antes de crearlo; por eso se crea el pass por defecto y luego se llama a `setGBuffer(depth)`.
+- **Bloom:** umbral HDR 2.0, radio 0 y pesos de los mips bajos recortados (`[1, .7, .3, .1, .03]`): brillan los focos, las tiras de luz y los destellos, sin velo sobre la grada. Intensidad por preset: Medium 0.15, High 0.18, Ultra 0.2.
+- **Retrato:** Bokeh con el foco a la distancia de la cara y viñeta propia multiplicativa. La `VignetteShader` de three mezcla hacia `1 - darkness`, lo que da valores negativos que el tone mapping Neutral convierte en un velo gris; con ese velo, los halos del desenfoque parecían puntos oscuros. El polvo y los haces se ocultan en la pasada de profundidad del Bokeh.
+- **Sombras una vez por fotograma** aunque el Bokeh vuelva a dibujar la escena (`shadowMap.autoUpdate` se controla en `renderFrame`).
+- `renderer.info.autoReset = false` y un reinicio por fotograma: `?stats=1` y las capturas suman todas las pasadas.
+- **Presets:** Low dibuja sin posproceso, con el antialias del canvas. Medium usa SMAA y bloom, sin AO. High y Ultra usan MSAA ×4, GTAO y bloom. Si el posproceso falla al crearse, se avisa en consola y se dibuja en directo.
+
+**renderer.info en High** (todas las pasadas del fotograma):
+
+| Plano | Fase 4 | Fase 5 |
+|---|---|---|
+| Retrato | 99 / 60 012 | 169 / 114 456 (el Bokeh dibuja la profundidad de la escena otra vez) |
+| Frontal | 113 / 60 508 | 131 / 60 764 |
+| Plano general | 720 / 128 400 | 736 / 129 678 |
+
+El posproceso añade unas 18 llamadas de pantalla completa. El coste real está en el *fill rate* (MSAA en HalfFloat, GTAO y mips del bloom): se mide con GPU y `?stats=1`, no aquí.
+
+**Pendiente:** el *depth fade* exacto de los conos volumétricos contra la escena necesitaría una prepasada de profundidad. Por ahora mantienen el fundido por altura, sin artefactos visibles.

@@ -544,13 +544,25 @@ const RENDER = (() => {
   return c;
 })();
 const TONEMAPS = { neutral: THREE.NeutralToneMapping, agx: THREE.AgXToneMapping, aces: THREE.ACESFilmicToneMapping, none: THREE.NoToneMapping };
+/* ---------- Calidad gráfica (presets; la interfaz y la autodetección completas llegan en la fase 6) ----------
+   post: cadena de posproceso (sin ella, render directo con el antialias del canvas) · msaa: muestras del render target
+   (0 → SMAA) · ao: GTAO (aoScale: resolución relativa del AO) · bloom: intensidad del bloom (0 = desactivado) */
+const PRESETS = {
+  low: { crowd: 0.25, post: false, msaa: 0, ao: false, bloom: 0 },
+  medium: { crowd: 0.5, post: true, msaa: 0, ao: false, bloom: 0.15 },
+  high: { crowd: 0.8, post: true, msaa: 4, ao: true, aoScale: 0.5, bloom: 0.18 },
+  ultra: { crowd: 1, post: true, msaa: 4, ao: true, aoScale: 1, bloom: 0.2 },
+};
+const PRESET_NAME = (() => { let p = QS.get('preset'); try { p = p || localStorage.getItem('ley_preset'); } catch (e) { } return PRESETS[p] ? p : 'high'; })();
+const QUALITY = PRESETS[PRESET_NAME];
 // Las luces son físicas desde r165: las intensidades antiguas (unidades heredadas) se multiplican por π
 const LU = Math.PI;
 // Focos y luces puntuales: convierte una intensidad heredada medida a la distancia de referencia a candelas (decay físico = 2)
 const legacyCd = (i, dist, cutoff, decay = 1) => i * Math.PI * Math.pow(Math.max(0, 1 - dist / cutoff), decay) * dist * dist;
 const srgbTex = t => { t.colorSpace = THREE.SRGBColorSpace; return t; };
 const canvas = $('#c');
-const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: 'high-performance' });
+// Con posproceso el antialias lo hace el render target (MSAA) o SMAA: el del canvas solo gastaría memoria
+const renderer = new THREE.WebGLRenderer({ canvas, antialias: !QUALITY.post, powerPreference: 'high-performance' });
 renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
 renderer.shadowMap.enabled = true;
 renderer.shadowMap.type = THREE.PCFShadowMap; // en r182+ PCF ya filtra suave; la penumbra se regula con shadow.radius
@@ -563,7 +575,76 @@ scene.background = new THREE.Color(0x050b14);
 scene.fog = new THREE.Fog(0x050b14, 100, 220);
 const camera = new THREE.PerspectiveCamera(58, 1, 0.05, 400);
 const camLook = new V3(0, 1, 8);
-function resize() { const w = window.innerWidth, h = window.innerHeight; renderer.setSize(w, h, false); camera.aspect = w / h; camera.fov = w / h < 1 ? 70 : 58; camera.updateProjectionMatrix(); }
+/* ---------- Posproceso ----------
+   RenderPass (HalfFloat, MSAA ×4 en WebGL2) → GTAO (profundidad del propio render, sin segunda pasada de geometría)
+   → Bokeh (solo retrato) → bloom sutil (solo lo que supera el umbral HDR: focos, tiras de luz, brillos)
+   → viñeta (solo retrato) → SMAA (si no hay MSAA) → OutputPass.
+   Único punto de tone mapping: el OutputPass usa renderer.toneMapping/toneMappingExposure. Al dibujar en un render
+   target, three no aplica tone mapping, así que la escena llega lineal y HDR y nunca se mapea dos veces.
+   La interfaz 3D (retícula, cursor) está en la capa UI_LAYER y se dibuja al final, sin tone mapping ni bloom. */
+const UI_LAYER = 1;
+const POST = (() => {
+  if (!QUALITY.post) { camera.layers.enable(UI_LAYER); return null; }
+  try {
+    const A = THREE.addons, w = innerWidth, h = innerHeight, msaa = renderer.capabilities.isWebGL2 ? QUALITY.msaa : 0;
+    const rt = new THREE.WebGLRenderTarget(w, h, { type: THREE.HalfFloatType, samples: msaa, depthTexture: new THREE.DepthTexture(w, h) });
+    const composer = new A.EffectComposer(renderer, rt);
+    const scenePass = new A.RenderPass(scene, camera); composer.addPass(scenePass);
+    let gtao = null;
+    if (QUALITY.ao) {
+      // se crea con su G-buffer por defecto y luego se apunta a la profundidad del RenderPass (en r186, pasarla en el
+      // constructor falla porque setGBuffer lee normalRenderTarget antes de crearlo). Normales: reconstruidas de la profundidad.
+      gtao = new A.GTAOPass(scene, camera, w, h); gtao.setGBuffer(rt.depthTexture);
+      gtao.updateGtaoMaterial({ radius: 0.5, distanceExponent: 1.4, thickness: 1.2, scale: 1.1, samples: 12 });
+      gtao.updatePdMaterial({ lumaPhi: 10, depthPhi: 2, normalPhi: 3, radius: 4, rings: 2, samples: 12 });
+      gtao.blendIntensity = 0.85;
+      if (QUALITY.aoScale < 1) { const ss = gtao.setSize.bind(gtao); gtao.setSize = (a, b) => ss(Math.max(1, Math.round(a * QUALITY.aoScale)), Math.max(1, Math.round(b * QUALITY.aoScale))); }
+      composer.addPass(gtao);
+    }
+    const bokeh = new A.BokehPass(scene, camera, { focus: 1.2, aperture: 0.0009, maxblur: 0.009 }); bokeh.enabled = false; composer.addPass(bokeh);
+    // su pasada de profundidad no debe ver lo que no escribe profundidad (polvo y haces): si no, crea halos oscuros
+    const bokehRender = bokeh.render.bind(bokeh);
+    bokeh.render = (...a) => { const hide = CINE.on ? [CINE.dust, ...CINE.shafts] : []; hide.forEach(o => o.visible = false); bokehRender(...a); hide.forEach(o => o.visible = true); };
+    let bloom = null;
+    if (QUALITY.bloom > 0) { bloom = new A.UnrealBloomPass(new THREE.Vector2(w, h), QUALITY.bloom, 0, 2.0); composer.addPass(bloom);
+      // umbral HDR 2: solo focos y brillos. Pesos de los mips bajos recortados: halo corto, sin velo sobre la grada
+      bloom.compositeMaterial.uniforms.bloomFactors.value = [1.0, 0.7, 0.3, 0.1, 0.03]; }
+    // viñeta multiplicativa en lineal (la VignetteShader de three mezcla hacia 1 - darkness, que da valores negativos
+    // y el tone mapping Neutral los convierte en un velo gris)
+    const vignette = new A.ShaderPass({
+      uniforms: { tDiffuse: { value: null }, offset: { value: 1.1 }, darkness: { value: 0.85 } },
+      vertexShader: 'varying vec2 vUv; void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }',
+      fragmentShader: 'uniform sampler2D tDiffuse; uniform float offset, darkness; varying vec2 vUv; void main() { vec4 t = texture2D(tDiffuse, vUv); vec2 d = (vUv - 0.5) * offset; gl_FragColor = vec4(t.rgb * clamp(1.0 - darkness * dot(d, d), 0.0, 1.0), t.a); }',
+    });
+    vignette.enabled = false; composer.addPass(vignette);
+    if (!msaa) composer.addPass(new A.SMAAPass());
+    composer.addPass(new A.OutputPass());
+    console.info(`[render] posproceso ${PRESET_NAME}: MSAA ${msaa || 'no (SMAA)'} · GTAO ${gtao ? 'sí' : 'no'} · bloom ${bloom ? QUALITY.bloom : 'no'}`);
+    return { composer, gtao, bokeh, bloom, vignette, setSize: (a, b) => composer.setSize(a, b) };
+  } catch (err) {
+    console.warn('[render] el posproceso no está disponible en este dispositivo; se dibuja sin él', err);
+    camera.layers.enable(UI_LAYER); return null;
+  }
+})();
+renderer.info.autoReset = false; // con varias pasadas por fotograma, se reinicia una vez por fotograma en renderFrame()
+// Dibuja un fotograma completo (escena + posproceso + interfaz 3D)
+function renderFrame() {
+  renderer.info.reset();
+  if (!POST) { renderer.render(scene, camera); return; }
+  const P = POST;
+  // el RenderPass dibuja en el readBuffer actual: su profundidad alimenta el GTAO
+  if (P.gtao) P.gtao.gtaoMaterial.uniforms.tDepth.value = P.gtao.pdMaterial.uniforms.tDepth.value = P.composer.readBuffer.depthTexture;
+  const cine = CINE.on; P.bokeh.enabled = P.vignette.enabled = cine;
+  if (cine) P.bokeh.uniforms.focus.value = camera.position.distanceTo(camLook);
+  // las sombras se calculan una sola vez por fotograma, aunque el Bokeh vuelva a dibujar la escena
+  renderer.shadowMap.autoUpdate = false; renderer.shadowMap.needsUpdate = true;
+  P.composer.render();
+  // interfaz 3D encima, sin tone mapping ni bloom (materiales con toneMapped:false)
+  const bg = scene.background; scene.background = null; camera.layers.set(UI_LAYER); renderer.autoClear = false;
+  renderer.render(scene, camera);
+  renderer.autoClear = true; camera.layers.set(0); scene.background = bg; renderer.shadowMap.autoUpdate = true;
+}
+function resize() { const w = window.innerWidth, h = window.innerHeight; renderer.setSize(w, h, false); camera.aspect = w / h; camera.fov = w / h < 1 ? 70 : 58; camera.updateProjectionMatrix(); if (POST) POST.setSize(w, h); }
 window.addEventListener('resize', resize); resize();
 
 // Iluminación de estadio nocturno: foco principal con sombras, relleno frío y contraluz para separar a los jugadores del césped
@@ -598,10 +679,6 @@ const rimL = new THREE.DirectionalLight(0xfff0dc, 0.34 * LU); rimL.position.set(
 const backL = new THREE.DirectionalLight(0xe8efff, 0.3 * LU); backL.position.set(-44, TOWER_Y, 62); backL.target.position.set(0, 0, 20); scene.add(backL, backL.target);
 
 const mkMat = c => new THREE.MeshLambertMaterial({ color: c });
-/* ---------- Calidad gráfica (presets; la interfaz y la autodetección completas llegan en la fase 6) ---------- */
-const PRESETS = { low: { crowd: 0.25 }, medium: { crowd: 0.5 }, high: { crowd: 0.8 }, ultra: { crowd: 1 } };
-const PRESET_NAME = (() => { let p = QS.get('preset'); try { p = p || localStorage.getItem('ley_preset'); } catch (e) { } return PRESETS[p] ? p : 'high'; })();
-const QUALITY = PRESETS[PRESET_NAME];
 
 /* ---------- Texturas procedurales (provisionales, cableadas a assets/manifest.json para sustituirlas) ---------- */
 const MAXANISO = renderer.capabilities.getMaxAnisotropy();
@@ -844,7 +921,7 @@ shadow.rotation.x = -Math.PI / 2; shadow.position.set(0, 0.01, 11); scene.add(sh
 const reticle = new THREE.Group();
 const retRing = new THREE.Mesh(new THREE.RingGeometry(0.2, 0.28, 40), new THREE.MeshBasicMaterial({ color: 0x3cf08a, transparent: true, opacity: 0.95, depthTest: false, toneMapped: false }));
 const retDot = new THREE.Mesh(new THREE.CircleGeometry(0.05, 16), new THREE.MeshBasicMaterial({ color: 0xffffff, depthTest: false, toneMapped: false }));
-retRing.renderOrder = 10; retDot.renderOrder = 11; reticle.add(retRing, retDot); reticle.visible = false; scene.add(reticle);
+retRing.renderOrder = 10; retDot.renderOrder = 11; retRing.layers.set(UI_LAYER); retDot.layers.set(UI_LAYER); reticle.add(retRing, retDot); reticle.visible = false; scene.add(reticle);
 
 /* =========================================================
    PERSONAJES ESTILO BLOQUES (tipo Roblox)
@@ -1441,7 +1518,7 @@ const tagEls = TAGGED.map(() => { const d = document.createElement('div'); d.cla
 const cursor = new THREE.Group();
 {
   const mat = new THREE.MeshBasicMaterial({ color: 0xf6c945, depthTest: false, transparent: true, toneMapped: false });
-  const cone = new THREE.Mesh(new THREE.ConeGeometry(0.17, 0.34, 4), mat); cone.rotation.x = Math.PI; cone.renderOrder = 12; cursor.add(cone);
+  const cone = new THREE.Mesh(new THREE.ConeGeometry(0.17, 0.34, 4), mat); cone.rotation.x = Math.PI; cone.renderOrder = 12; cone.layers.set(UI_LAYER); cursor.add(cone);
   const ringM = new THREE.Mesh(new THREE.RingGeometry(0.48, 0.6, 36, 1, 0, Math.PI * 1.7), new THREE.MeshBasicMaterial({ color: 0xf6c945, transparent: true, opacity: 0.9, side: THREE.DoubleSide, toneMapped: false }));
   ringM.rotation.x = -Math.PI / 2; cursor.userData.ring = ringM; scene.add(ringM); ringM.visible = false;
   cursor.visible = false; scene.add(cursor);
@@ -2367,7 +2444,7 @@ function portrait() {
 }
 window.addEventListener('resize', () => { if (CINE.on) { letterbox(); ui.style.paddingBottom = (CINE.bar + 18) + 'px'; } });
 function saveShot() {
-  renderer.render(scene, camera);
+  renderFrame();
   const W = canvas.width, H = canvas.height, vh = Math.min(H, Math.round(W * 9 / 16)), y0 = Math.round((H - vh) / 2);
   const out = document.createElement('canvas'); out.width = W; out.height = vh; const g = out.getContext('2d');
   g.drawImage(canvas, 0, y0, W, vh, 0, 0, W, vh);
@@ -2405,7 +2482,7 @@ function frame(now) {
   if (DBG) dbgFrame();
   else {
     if (M.on) updateMoment(dt); else if (CINE.on) cineStep(dt); else if (CER.on) cerStep(dt); else if (PREVIEW) previewCam(dt); else idleCam();
-    renderer.render(scene, camera);
+    renderFrame();
   }
   if (STATS) statsTick(now);
   // señal para tests y capturas: recursos cargados (fuentes) y al menos un fotograma renderizado
@@ -2452,7 +2529,7 @@ function dbgFrame() {
   // la escena ocupa la parte izquierda de la pantalla
   const vw = Math.floor(W * 0.5); renderer.setViewport(0, 0, vw / renderer.getPixelRatio(), H / renderer.getPixelRatio()); renderer.setScissorTest(false);
   D.cam.right = D.cols + 0.2; D.cam.top = 0.2; const aspect = vw / H, h = (D.cols + 0.4) / aspect; D.cam.bottom = 0.2 - h; D.cam.updateProjectionMatrix();
-  renderer.render(D.sc, D.cam);
+  renderer.info.reset(); renderer.render(D.sc, D.cam);
   if (D.done) return;
   const gl = renderer.getContext(), px = new Uint8Array(4), hex = v => '#' + v.toString(16).padStart(6, '0');
   const read = (x, y) => { const sx = Math.round((x + 0.2) / (D.cols + 0.4) * vw), sy = Math.round((1 - (0.2 - y) / h) * H); gl.readPixels(sx, sy, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, px); return (px[0] << 16) | (px[1] << 8) | px[2]; };

@@ -40,7 +40,7 @@ for (const [nombre, fn] of Object.entries(PLANOS)) {
   await page.waitForFunction(() => window.__escenaLista === true || (typeof renderer !== 'undefined' && document.fonts.status === 'loaded'), null, { timeout: 60000 });
   await page.waitForTimeout(800);
   await page.evaluate(`window.__manual = true; (${fn.toString()})();`);
-  const datos = await page.evaluate(() => { renderer.info.autoReset = false; renderer.info.reset(); renderer.render(scene, camera); const i = renderer.info; return { drawCalls: i.render.calls, triangulos: i.render.triangles, texturas: i.memory.textures, geometrias: i.memory.geometries, programas: (i.programs || []).length }; });
+  const datos = await page.evaluate(() => { renderer.info.autoReset = false; renderer.info.reset(); if (typeof renderFrame === 'function') renderFrame(); else renderer.render(scene, camera); const i = renderer.info; return { drawCalls: i.render.calls, triangulos: i.render.triangles, texturas: i.memory.textures, geometrias: i.memory.geometries, programas: (i.programs || []).length }; });
   await page.screenshot({ path: join(out, nombre + '.png'), timeout: 60000 });
   info[nombre] = { ...datos, errores: errs };
   console.log(nombre, JSON.stringify(info[nombre]));
@@ -62,7 +62,7 @@ for (const nombre of ['cuerpo_frontal', 'plano_general']) {
   const ok = await page.waitForFunction(() => window.__glbListo && window.__escenaLista, null, { timeout: 60000 }).then(() => true, () => false);
   if (!ok) { await page.close(); continue; }
   await page.evaluate(`window.__manual = true; (${PLANOS[nombre].toString()})(); if (typeof animFigures === 'function') for (let i = 0; i < 20; i++) animFigures(1 / 60);`);
-  const datos = await page.evaluate(() => { renderer.info.autoReset = false; renderer.info.reset(); renderer.render(scene, camera); const i = renderer.info; return { drawCalls: i.render.calls, triangulos: i.render.triangles, glb: window.__glbListo }; });
+  const datos = await page.evaluate(() => { renderer.info.autoReset = false; renderer.info.reset(); if (typeof renderFrame === 'function') renderFrame(); else renderer.render(scene, camera); const i = renderer.info; return { drawCalls: i.render.calls, triangulos: i.render.triangles, glb: window.__glbListo }; });
   await page.screenshot({ path: join(out, nombre + '_glb_sintetico.png') });
   info[nombre + '_glb_sintetico'] = datos; console.log(nombre + '_glb_sintetico', JSON.stringify(datos));
   await page.close();
