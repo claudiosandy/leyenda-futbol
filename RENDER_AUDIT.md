@@ -195,3 +195,15 @@ El plano general sube por la cámara de sombras de r186, que procesa más objeto
 - **Polvo:** de 500 a 220 *sprites* redondos con atenuación por tamaño, niebla y opacidad 0.35.
 
 Pendiente de la fase 3: el césped y la grada siguen siendo texturas de canvas saturadas o ruidosas (césped `#1b9c30`).
+
+---
+
+# Fase 3 — Césped y estadio (hecha)
+
+- **Césped PBR procedural:** albedo de briznas (512 px), mapa de normales generado a partir del de alturas y mapa de rugosidad. Repetición en losetas de 2,6 m, con **segunda escala** del albedo a unos 11 m y **variación macro** a unos 60 m para romper la repetición. El shader (`onBeforeCompile`) añade las **franjas de corte** cada 5,25 m (variando albedo y rugosidad), con anisotropía máxima. Las **líneas y el desgaste** van en una capa con transparencia (16 px/m) que el mismo shader mezcla: no hay mallas superpuestas, así que no hay z-fighting.
+- **Grada:** el ruido de píxeles pasa a ser **público instanciado** (`InstancedMesh`, 1 draw call). Impostores con un atlas procedural de 8 siluetas (camiseta, cabeza, sombreado y recorte), con color de camiseta y de piel por instancia, `alphaToCoverage` y mipmaps. Animación sutil por vértice que se convierte en saltos tras un gol o en las ceremonias. La densidad depende del preset (`QUALITY.crowd`: low 0.25 · medium 0.5 · high 0.8 · ultra 1; unas 13 000 personas en High).
+- **Estructura:** gradas de hormigón PBR con textura procedural, muros, techos de metal y tiras de luz en HDR para el bloom.
+- **Cielo:** cúpula con gradiente nocturno y resplandor del estadio en el horizonte.
+- **Assets opcionales:** `assets/manifest.json` (texturas de césped y hormigón, HDRI). El build marca `disponible` según si el archivo existe, y el juego solo pide los disponibles: no hay 404 en consola. Si un asset falla, se avisa y se usa el procedural. Con `file://` siempre se usa lo procedural, porque Chrome no deja usar archivos locales como texturas WebGL. El deploy publica también `assets/`.
+
+**renderer.info en High** (plano general): 948 draw calls y 125 000 triángulos. El público suma unos 26 000 triángulos en 1 draw call.

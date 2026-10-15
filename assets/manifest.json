@@ -1,0 +1,48 @@
+{
+  "version": 1,
+  "nota": "Assets externos opcionales. Si un archivo falta o falla al cargar, el juego usa la versión procedural (y lo avisa en consola). Lista de descargas en ASSETS.md.",
+  "textures": {
+    "grass_albedo": {
+      "url": "assets/textures/grass/grass_albedo.jpg",
+      "colorSpace": "srgb",
+      "target": "grass.map",
+      "licencia": "CC0",
+      "maxKB": 2048,
+      "disponible": false
+    },
+    "grass_normal": {
+      "url": "assets/textures/grass/grass_normal.jpg",
+      "colorSpace": "linear",
+      "target": "grass.normalMap",
+      "licencia": "CC0",
+      "maxKB": 2048,
+      "disponible": false
+    },
+    "grass_roughness": {
+      "url": "assets/textures/grass/grass_roughness.jpg",
+      "colorSpace": "linear",
+      "target": "grass.roughnessMap",
+      "licencia": "CC0",
+      "maxKB": 1024,
+      "disponible": false
+    },
+    "concrete_albedo": {
+      "url": "assets/textures/concrete/concrete_albedo.jpg",
+      "colorSpace": "srgb",
+      "target": "stand.map",
+      "licencia": "CC0",
+      "maxKB": 1024,
+      "disponible": false
+    }
+  },
+  "hdri": {
+    "stadium_night": {
+      "url": "assets/hdri/stadium_night_1k.hdr",
+      "licencia": "CC0",
+      "maxKB": 4096,
+      "uso": "solo calidad alta; el entorno procedural es permanente",
+      "disponible": false
+    }
+  },
+  "models": {}
+}
