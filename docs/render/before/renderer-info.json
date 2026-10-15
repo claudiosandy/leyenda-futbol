@@ -1,0 +1,34 @@
+{
+  "retrato_primer_plano": {
+    "drawCalls": 120,
+    "triangulos": 7812,
+    "texturas": 30,
+    "geometrias": 110,
+    "programas": 24,
+    "errores": []
+  },
+  "cuerpo_frontal": {
+    "drawCalls": 130,
+    "triangulos": 8032,
+    "texturas": 30,
+    "geometrias": 105,
+    "programas": 14,
+    "errores": []
+  },
+  "espalda_dorsal": {
+    "drawCalls": 131,
+    "triangulos": 8434,
+    "texturas": 30,
+    "geometrias": 106,
+    "programas": 14,
+    "errores": []
+  },
+  "plano_general": {
+    "drawCalls": 868,
+    "triangulos": 68572,
+    "texturas": 56,
+    "geometrias": 421,
+    "programas": 15,
+    "errores": []
+  }
+}
