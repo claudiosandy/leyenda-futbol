@@ -36,8 +36,12 @@ y tus disparos interactivos cambian tus goles, asistencias, títulos y Balones d
 - Futbolistas con proporciones humanas estilo FIFA: rostro, camiseta con nombre y dorsal, medias, botas y peinados.
 
 ## Desarrollo
-Todo el juego está en `index.html` (incluye Three.js r128, licencia MIT).
-Cada vez que se sube un cambio a `main`, GitHub Actions ejecuta `node tools/verificar.mjs`
-para comprobar que el código no tiene errores y, si todo está bien, publica el juego en GitHub Pages.
+- La fuente del juego está en `src/index.html`. `index.html` (raíz) se **genera** con `npm run build`:
+  incrusta Three.js (npm, versión fijada en `package.json`) para que funcione en GitHub Pages y con doble clic sin internet.
+- `npm ci` instala las dependencias; `npm run check` comprueba que `index.html` está al día y que no hay errores de sintaxis.
+- `npm run capturas -- after` genera las capturas de verificación del render en `docs/render/after/`.
+- Parámetros de diagnóstico: `?stats=1` (fps y `renderer.info`), `?debug=color` (muestras de color de los kits),
+  `?tonemap=neutral|agx|aces|none` y `?exposure=1.0`.
+- Cada cambio en `main` pasa por GitHub Actions (`npm ci` + `npm run check`) antes de publicarse en GitHub Pages.
 
 > Juego de fans sin fines comerciales. Los nombres de jugadores, clubes y competiciones pertenecen a sus respectivos dueños.

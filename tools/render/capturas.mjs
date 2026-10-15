@@ -11,7 +11,7 @@ const preset = process.argv[3] || '';
 const root = execSync('git rev-parse --show-toplevel').toString().trim();
 const out = join(root, 'docs', 'render', fase);
 mkdirSync(out, { recursive: true });
-const exe = ['/opt/pw-browsers/chromium', '/opt/pw-browsers/chromium-1194/chrome-linux/chrome'].find(existsSync);
+const exe = ['/opt/pw-browsers/chromium-1194/chrome-linux/chrome', '/opt/pw-browsers/chromium'].find(existsSync);
 const browser = await chromium.launch({ executablePath: exe, args: ['--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist', '--use-gl=angle'] });
 
 const PLANOS = {
@@ -44,6 +44,14 @@ for (const [nombre, fn] of Object.entries(PLANOS)) {
   await page.screenshot({ path: join(out, nombre + '.png'), timeout: 60000 });
   info[nombre] = { ...datos, errores: errs };
   console.log(nombre, JSON.stringify(info[nombre]));
+  await page.close();
+}
+// Panel ?debug=color (solo existe desde la fase 1)
+{
+  const page = await browser.newPage({ viewport: { width: 1280, height: 720 } });
+  await page.goto('file://' + join(root, 'index.html') + '?debug=color', { timeout: 60000 });
+  const ok = await page.waitForFunction(() => Array.isArray(window.__debugColor), null, { timeout: 30000 }).then(() => true, () => false);
+  if (ok) { await page.screenshot({ path: join(out, 'debug_color.png') }); info.debug_color = await page.evaluate(() => window.__debugColor); console.log('debug_color OK'); }
   await page.close();
 }
 writeFileSync(join(out, 'renderer-info.json'), JSON.stringify(info, null, 2));

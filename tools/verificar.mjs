@@ -10,7 +10,7 @@ const errores = [];
 const scripts = [...html.matchAll(/<script(?:\s[^>]*)?>([\s\S]*?)<\/script>/g)];
 if (scripts.length === 0) errores.push('No se encontró ningún <script> en index.html');
 if (/<script[^>]+src=/.test(html)) errores.push('index.html carga scripts externos; el juego debe funcionar sin conexión');
-if (!html.includes('Three.js r128')) errores.push('Falta Three.js incluido en el archivo');
+if (!/Three\.js r\d+ \(/.test(html)) errores.push('Falta Three.js incluido en el archivo (ejecuta npm run build)');
 
 const dir = mkdtempSync(join(tmpdir(), 'leyenda-'));
 scripts.forEach((m, i) => {

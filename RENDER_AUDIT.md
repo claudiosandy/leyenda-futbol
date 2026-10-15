@@ -144,3 +144,42 @@ Las 868 draw calls del plano general vienen de 20 figuras × ~29 mallas, dibujad
 
 - El commit `24a7055` metió por error 4 capturas en `shots/` en la raíz del repo, por un directorio de trabajo equivocado. **Se eliminan en esta fase.** Las capturas van ahora a `<raíz>/docs/render/{before,after}`, calculando la raíz con `git rev-parse --show-toplevel`.
 - Los tests de capturas anteriores vivían fuera del repo. Ahora están en `tools/render/capturas.mjs`, con Playwright fijado por npm (`playwright@1.56.1`, que coincide con el Chromium preinstalado).
+
+---
+
+# Fase 1 — Pipeline de color (hecha)
+
+**Decisión D1 = A.** `three@0.186.1` desde npm + esbuild. La fuente está en `src/index.html` y `npm run build` genera `index.html`, autocontenido (1 MB). El script del juego sigue siendo clásico, con las mismas variables globales, y three se expone como `window.THREE` (`src/three-entry.js`). La lógica de simulación no se ha tocado.
+
+## Cambios
+| Archivo | Cambio |
+|---|---|
+| `src/index.html` | Se eliminan los parches globales de `setHex` y `CanvasTexture`. `ColorManagement.enabled`, `outputColorSpace = SRGBColorSpace` y **NeutralToneMapping** por defecto; AgX, ACES y sin tone mapping quedan como opción (`?tonemap=`, `?exposure=`, `setRender()`, guardado en `localStorage`). `colorSpace` explícito: texturas de color en sRGB (campo, grada, LED, halos, balón, camisetas, caras) y de datos en `NoColorSpace` (trama, poros, sudor). Luces en **unidades físicas**: direccionales, hemisférica y ambiente ×π; focos y puntuales convertidos a candelas con `decay = 2` (`legacyCd`). Menos relleno plano. `toneMapped: false` en la retícula, los aros y el cursor. PCFShadowMap con `radius` y `normalBias` (PCFSoft ya no existe en r186). Señal `window.__escenaLista`, `?stats=1`, `?debug=color` |
+| `src/three-entry.js` | Entrada de esbuild: `window.THREE = {...three, addons: {}}` |
+| `tools/build.mjs` | Genera `index.html`; con `--check`, CI falla si no está al día |
+| `tools/verificar.mjs` | Acepta cualquier `Three.js rNNN` incrustado |
+| `.github/workflows/publicar.yml` | `npm ci` + `npm run check` antes de publicar |
+
+## Verificación de color (`?debug=color`, `__debugColor`)
+| Tone mapping | Δ medio / máx, muestras sin luz | Granate `#a50044` con luz | Amarillo `#fde100` con luz | Blanco con luz |
+|---|---|---|---|---|
+| none | **0 / 0** (no hay doble conversión) | `#a41b49` | `#fade1b` | `#fcfcfc` |
+| **neutral (por defecto)** | ≈12 / 31 · **tono ≤ 2°** | `#a20243` | `#efd51b` | `#efefef` |
+| agx | 42 / 112 | `#a93c57` (rosado) | `#cbbb71` | `#c9c9c9` |
+| aces | 22 / 86 | `#b10041` | `#e4d85a` | `#e1e1e1` |
+
+Neutral conserva el tono de todos los kits: desplazamiento máximo de 2°. Lo único que hace es comprimir ligeramente los extremos (blancos a `#f0f0f0` y casi negros a `#010101`), por diseño.
+
+En las capturas (mismos planos):
+- Granate del retrato: `#f03860` → **`#a80840`**.
+- Césped de primer término: `#5ec160` (pastel) → `#1da437`. Ahora está **demasiado saturado**: lo calibro en las fases 2 y 3.
+- El pecho del jugador queda en sombra en el plano frontal, porque el sol está detrás: se corrige con la iluminación de la fase 2.
+
+## renderer.info (SwiftShader, incluye la pasada de sombras)
+| Plano | before calls / tris | fase 1 calls / tris |
+|---|---|---|
+| Retrato | 120 / 7 812 | 123 / 7 812 |
+| Frontal | 130 / 8 032 | 129 / 7 952 |
+| Plano general | 868 / 68 572 | 934 / 72 882 |
+
+El plano general sube por la cámara de sombras de r186, que procesa más objetos en el frustum. El problema de draw calls se ataca en la fase 6.

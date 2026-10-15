@@ -1,0 +1,252 @@
+{
+  "retrato_primer_plano": {
+    "drawCalls": 123,
+    "triangulos": 7812,
+    "texturas": 26,
+    "geometrias": 109,
+    "programas": 27,
+    "errores": []
+  },
+  "cuerpo_frontal": {
+    "drawCalls": 129,
+    "triangulos": 7952,
+    "texturas": 25,
+    "geometrias": 103,
+    "programas": 15,
+    "errores": []
+  },
+  "espalda_dorsal": {
+    "drawCalls": 129,
+    "triangulos": 7952,
+    "texturas": 25,
+    "geometrias": 103,
+    "programas": 15,
+    "errores": []
+  },
+  "plano_general": {
+    "drawCalls": 934,
+    "triangulos": 72882,
+    "texturas": 53,
+    "geometrias": 450,
+    "programas": 17,
+    "errores": []
+  },
+  "debug_color": [
+    {
+      "n": "Barcelona",
+      "hex": "#a50044",
+      "sinLuz": "#a50044",
+      "conLuz": "#a20243",
+      "dSinLuz": 0,
+      "dConLuz": 3,
+      "tono": 0
+    },
+    {
+      "n": "Barcelona (2º)",
+      "hex": "#004d98",
+      "sinLuz": "#004d98",
+      "conLuz": "#024c95",
+      "dSinLuz": 0,
+      "dConLuz": 3,
+      "tono": 0
+    },
+    {
+      "n": "Real Madrid",
+      "hex": "#f4f4f4",
+      "sinLuz": "#ebebeb",
+      "conLuz": "#eaeaea",
+      "dSinLuz": 9,
+      "dConLuz": 10,
+      "tono": 0
+    },
+    {
+      "n": "Real Madrid (2º)",
+      "hex": "#d4af37",
+      "sinLuz": "#d0aa18",
+      "conLuz": "#cda720",
+      "dSinLuz": 31,
+      "dConLuz": 23,
+      "tono": 1
+    },
+    {
+      "n": "Liverpool",
+      "hex": "#c8102e",
+      "sinLuz": "#c70129",
+      "conLuz": "#c4052a",
+      "dSinLuz": 15,
+      "dConLuz": 11,
+      "tono": 2
+    },
+    {
+      "n": "Liverpool (2º)",
+      "hex": "#f6c945",
+      "sinLuz": "#ecbf2d",
+      "conLuz": "#ebbe31",
+      "dSinLuz": 24,
+      "dConLuz": 20,
+      "tono": 1
+    },
+    {
+      "n": "Borussia Dortmund",
+      "hex": "#fde100",
+      "sinLuz": "#f0d61f",
+      "conLuz": "#efd51b",
+      "dSinLuz": 31,
+      "dConLuz": 27,
+      "tono": 1
+    },
+    {
+      "n": "Borussia Dortmund (2º)",
+      "hex": "#111111",
+      "sinLuz": "#010101",
+      "conLuz": "#050505",
+      "dSinLuz": 16,
+      "dConLuz": 12,
+      "tono": 0
+    },
+    {
+      "n": "Manchester City",
+      "hex": "#6cabdd",
+      "sinLuz": "#5da3d7",
+      "conLuz": "#5fa2d5",
+      "dSinLuz": 15,
+      "dConLuz": 13,
+      "tono": 1
+    },
+    {
+      "n": "Manchester City (2º)",
+      "hex": "#f4f4f4",
+      "sinLuz": "#ebebeb",
+      "conLuz": "#eaeaea",
+      "dSinLuz": 9,
+      "dConLuz": 10,
+      "tono": 0
+    },
+    {
+      "n": "Juventus",
+      "hex": "#ffffff",
+      "sinLuz": "#f0f0f0",
+      "conLuz": "#efefef",
+      "dSinLuz": 15,
+      "dConLuz": 16,
+      "tono": 0
+    },
+    {
+      "n": "Juventus (2º)",
+      "hex": "#111111",
+      "sinLuz": "#010101",
+      "conLuz": "#050505",
+      "dSinLuz": 16,
+      "dConLuz": 12,
+      "tono": 0
+    },
+    {
+      "n": "Inter",
+      "hex": "#0068a8",
+      "sinLuz": "#0068a8",
+      "conLuz": "#0266a5",
+      "dSinLuz": 0,
+      "dConLuz": 3,
+      "tono": 0
+    },
+    {
+      "n": "Inter (2º)",
+      "hex": "#111111",
+      "sinLuz": "#010101",
+      "conLuz": "#050505",
+      "dSinLuz": 16,
+      "dConLuz": 12,
+      "tono": 0
+    },
+    {
+      "n": "PSG",
+      "hex": "#004170",
+      "sinLuz": "#004170",
+      "conLuz": "#02406e",
+      "dSinLuz": 0,
+      "dConLuz": 2,
+      "tono": 0
+    },
+    {
+      "n": "PSG (2º)",
+      "hex": "#d80621",
+      "sinLuz": "#d8001f",
+      "conLuz": "#d4031f",
+      "dSinLuz": 6,
+      "dConLuz": 4,
+      "tono": 0
+    },
+    {
+      "n": "Boca Juniors",
+      "hex": "#103f79",
+      "sinLuz": "#013c78",
+      "conLuz": "#053b76",
+      "dSinLuz": 15,
+      "dConLuz": 11,
+      "tono": 2
+    },
+    {
+      "n": "Boca Juniors (2º)",
+      "hex": "#f3b229",
+      "sinLuz": "#ecac15",
+      "conLuz": "#eaaa18",
+      "dSinLuz": 20,
+      "dConLuz": 17,
+      "tono": 1
+    },
+    {
+      "n": "River Plate",
+      "hex": "#ffffff",
+      "sinLuz": "#f0f0f0",
+      "conLuz": "#efefef",
+      "dSinLuz": 15,
+      "dConLuz": 16,
+      "tono": 0
+    },
+    {
+      "n": "River Plate (2º)",
+      "hex": "#d71920",
+      "sinLuz": "#d60210",
+      "conLuz": "#d20814",
+      "dSinLuz": 23,
+      "dConLuz": 17,
+      "tono": 1
+    },
+    {
+      "n": "Atlético de Madrid",
+      "hex": "#cb3524",
+      "sinLuz": "#c92706",
+      "conLuz": "#c5290f",
+      "dSinLuz": 30,
+      "dConLuz": 21,
+      "tono": 2
+    },
+    {
+      "n": "Atlético de Madrid (2º)",
+      "hex": "#ffffff",
+      "sinLuz": "#f0f0f0",
+      "conLuz": "#efefef",
+      "dSinLuz": 15,
+      "dConLuz": 16,
+      "tono": 0
+    },
+    {
+      "n": "Chelsea",
+      "hex": "#034694",
+      "sinLuz": "#004594",
+      "conLuz": "#034591",
+      "dSinLuz": 3,
+      "dConLuz": 3,
+      "tono": 0
+    },
+    {
+      "n": "Chelsea (2º)",
+      "hex": "#ffffff",
+      "sinLuz": "#f0f0f0",
+      "conLuz": "#efefef",
+      "dSinLuz": 15,
+      "dConLuz": 16,
+      "tono": 0
+    }
+  ]
+}
